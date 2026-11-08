@@ -53,7 +53,12 @@ export async function createTemplate(data) {
   const docRef = await addDoc(collection(db, 'reportTemplates'), {
     title: data.title || '',
     description: data.description || '',
+    // 문항 세트의 공통 안내(그림·서식) — 예전에는 여기서 빠져서 새로 만든 문항 세트의 그림 안내가
+    // 저장되지 않았다(수정 저장 때만 남았음)
+    ...(data.descriptionHtml !== undefined && { descriptionHtml: data.descriptionHtml }),
     sections: data.sections || [],
+    // 문항 세트의 트리 구조: 하위 문항이 있는 문항의 공통 내용 (utils/questionTree.js)
+    ...(data.questionGroups !== undefined && { questionGroups: data.questionGroups }),
     kind: data.kind || TEMPLATE_KIND_REPORT,
     active: true,
     createdBy: auth.currentUser?.uid || '',

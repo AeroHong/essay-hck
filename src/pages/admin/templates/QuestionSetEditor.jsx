@@ -1,4 +1,4 @@
-import React, { useEffect, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ThemeProvider } from '@mui/material/styles'
 import { useAuth } from '../../../App.jsx'
@@ -6,18 +6,14 @@ import {
   getTemplate, createTemplate, updateTemplate, getTemplateKind, TEMPLATE_KIND_QUESTION_SET
 } from '../../../services/reportTemplates.js'
 import { sanitizePassageHtml, isEmptyHtml, htmlToText } from '../../../utils/sanitizeHtml.js'
+import {
+  sectionsToTree, treeToTemplate, treeTotalScore, addChild, emptyParent,
+  autoParentHeading, autoChildHeading
+} from '../../../utils/questionTree.js'
 import { theme } from '../../../theme.js'
 import RichTextEditor from '../../../components/richtext/RichTextEditor.jsx'
 import ToastProvider from '../../../components/richtext/ToastProvider.jsx'
 import { uploadPassageImage, isImageFile } from '../../../services/storage.js'
-
-function makeSectionId() {
-  return `sec_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
-}
-
-function emptyQuestion() {
-  return { id: makeSectionId(), heading: '', promptHtml: '', required: true, wordLimitGuide: null, maxScore: null, drawImage: null }
-}
 
 // 그림 위 표시용 배경 그림의 원래 크기 — 학생 화면에서 그림 비율대로 표시 칸을 잡는 데 쓴다
 function readImageSize(url) {
@@ -31,7 +27,7 @@ function readImageSize(url) {
 
 /** 문항별 '그림 위 표시' 설정 — 배경 그림을 올리면 학생이 그 위에 빗금·펜으로 답한다 */
 function DrawImageField({ value, onChange }) {
-  const inputRef = React.useRef(null)
+  const inputRef = useRef(null)
   const [busy, setBusy] = useState(false)
 
   async function handleFile(file) {
@@ -71,33 +67,46 @@ function DrawImageField({ value, onChange }) {
   )
 }
 
-const emptyForm = { title: '', descriptionHtml: '', sections: [emptyQuestion()] }
+const inputClass = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300'
+const labelClass = 'block text-xs font-bold text-gray-600 mb-1.5'
+const iconBtn = 'text-gray-300 hover:text-indigo-600 disabled:opacity-30 disabled:hover:text-gray-300 px-1.5'
 
-function escapeHtml(text) {
-  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
-}
-
-// 공통 안내가 평문(description)만 있던 초기 문항 세트를 열면 서식 편집기에 옮겨 담는다.
-function plainToHtml(text) {
-  return (text || '')
-    .split(/\n{2,}/)
-    .filter(Boolean)
-    .map(block => `<p>${escapeHtml(block).replace(/\n/g, '<br/>')}</p>`)
-    .join('')
+/** 답을 쓰는 칸의 설정 — 필수 응답·배점·분량 가이드·그림 위 표시 */
+function AnswerOptions({ item, onChange }) {
+  return (
+    <>
+      <div className="flex flex-wrap items-center gap-4">
+        <label className="flex items-center gap-1.5 text-xs text-gray-600">
+          <input type="checkbox" checked={item.required} onChange={e => onChange({ required: e.target.checked })} />
+          필수 응답
+        </label>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-gray-400 whitespace-nowrap">배점</span>
+          <input type="number" step="0.5" min="0" className={`${inputClass} !w-20`} value={item.maxScore ?? ''} onChange={e => onChange({ maxScore: e.target.value })} placeholder="예: 2" />
+        </div>
+        <div className="flex items-center gap-1.5">
+          <span className="text-xs text-gray-400 whitespace-nowrap">분량 가이드(자, 선택)</span>
+          <input type="number" className={`${inputClass} !w-24`} value={item.wordLimitGuide ?? ''} onChange={e => onChange({ wordLimitGuide: e.target.value })} placeholder="예: 200" />
+        </div>
+      </div>
+      <DrawImageField value={item.drawImage} onChange={drawImage => onChange({ drawImage })} />
+    </>
+  )
 }
 
 /**
- * 서술형 문항 세트 편집기. 보고서 양식(TemplateEditor)은 안내 문구가 한 줄짜리 평문이라
- * 그림·수식이 들어가는 문항을 쓰기 어려워서, 문항 본문을 지문과 같은 RichTextEditor(이미지
- * 붙여넣기/끌어다 놓기, 서식)로 쓰게 한 별도 화면이다. 저장 형식은 보고서 양식과 같은
- * reportTemplates 문서(kind: 'question_set')라서 배정·채점·리플레이는 그대로 동작한다.
+ * 서술형 문항 세트 편집기. 문항(공통 내용: 자료·상황) → 하위 문항(지시문·답안 칸) 2단 트리로 쓴다.
+ * 하위 문항이 없는 문항은 그 자체가 답을 쓰는 문항이다. 저장 형식은 utils/questionTree.js 참고 —
+ * 답을 쓰는 칸은 예전과 같은 reportTemplates.sections라서 배정·채점·리플레이는 그대로 동작한다.
  */
 export default function QuestionSetEditor() {
   const navigate = useNavigate()
   const { user } = useAuth()
   const { templateId } = useParams()
   const isEdit = Boolean(templateId)
-  const [form, setForm] = useState(emptyForm)
+  const [title, setTitle] = useState('')
+  const [descriptionHtml, setDescriptionHtml] = useState('')
+  const [tree, setTree] = useState(() => [emptyParent()])
   const [loading, setLoading] = useState(isEdit)
   const [saving, setSaving] = useState(false)
   const [accessDenied, setAccessDenied] = useState(false)
@@ -115,91 +124,72 @@ export default function QuestionSetEditor() {
         return
       }
       if (t) {
-        setForm({
-          ...emptyForm,
-          ...t,
-          descriptionHtml: t.descriptionHtml || plainToHtml(t.description),
-          sections: t.sections?.length
-            ? t.sections.map(s => ({ ...emptyQuestion(), ...s }))
-            : [emptyQuestion()]
-        })
+        setTitle(t.title || '')
+        setDescriptionHtml(t.descriptionHtml || plainToHtml(t.description))
+        const loaded = sectionsToTree(t.sections || [], t.questionGroups || [])
+        setTree(loaded.length ? loaded : [emptyParent()])
       }
       setLoading(false)
     })
   }, [isEdit, templateId, user, navigate])
 
-  function set(key, value) {
-    setForm(prev => ({ ...prev, [key]: value }))
+  const setParent = (pi, patch) => setTree(prev => prev.map((p, i) => (i === pi ? { ...p, ...patch } : p)))
+  const setChild = (pi, ci, patch) => setTree(prev => prev.map((p, i) => (
+    i === pi ? { ...p, children: p.children.map((c, k) => (k === ci ? { ...c, ...patch } : c)) } : p
+  )))
+
+  function move(list, idx, dir) {
+    const target = idx + dir
+    if (target < 0 || target >= list.length) return list
+    const next = [...list]
+    ;[next[idx], next[target]] = [next[target], next[idx]]
+    return next
+  }
+  const moveParent = (pi, dir) => setTree(prev => move(prev, pi, dir))
+  const moveChild = (pi, ci, dir) => setTree(prev => prev.map((p, i) => (i === pi ? { ...p, children: move(p.children, ci, dir) } : p)))
+
+  const hasText = (html) => !isEmptyHtml(sanitizePassageHtml(html || ''))
+
+  function removeParent(pi) {
+    const p = tree[pi]
+    const filled = hasText(p.promptHtml) || p.children.some(c => hasText(c.promptHtml))
+    const label = p.heading.trim() || autoParentHeading(pi + 1)
+    const msg = p.children.length ? `${label}과 하위 문항 ${p.children.length}개를 모두 삭제할까요?` : `${label}을 삭제할까요?`
+    if (filled && !window.confirm(msg)) return
+    setTree(prev => prev.filter((_, i) => i !== pi))
   }
 
-  function setQuestion(idx, patch) {
-    setForm(prev => ({
-      ...prev,
-      sections: prev.sections.map((s, i) => i === idx ? { ...s, ...patch } : s)
-    }))
+  function removeChild(pi, ci) {
+    const c = tree[pi].children[ci]
+    if (hasText(c.promptHtml) && !window.confirm(`하위 문항 ${autoChildHeading(pi + 1, ci + 1)}을 삭제할까요?`)) return
+    setTree(prev => prev.map((p, i) => (i === pi ? { ...p, children: p.children.filter((_, k) => k !== ci) } : p)))
   }
 
-  function addQuestion() {
-    setForm(prev => ({ ...prev, sections: [...prev.sections, emptyQuestion()] }))
-  }
-
-  function removeQuestion(idx) {
-    const q = form.sections[idx]
-    if (!isEmptyHtml(sanitizePassageHtml(q.promptHtml || '')) && !window.confirm(`문항 ${idx + 1}을 삭제할까요?`)) return
-    setForm(prev => ({ ...prev, sections: prev.sections.filter((_, i) => i !== idx) }))
-  }
-
-  function moveQuestion(idx, dir) {
-    setForm(prev => {
-      const next = [...prev.sections]
-      const target = idx + dir
-      if (target < 0 || target >= next.length) return prev
-      ;[next[idx], next[target]] = [next[target], next[idx]]
-      return { ...prev, sections: next }
-    })
-  }
+  const addChildTo = (pi) => setTree(prev => prev.map((p, i) => (i === pi ? addChild(p) : p)))
+  const addParent = () => setTree(prev => [...prev, emptyParent()])
 
   async function handleSave() {
-    if (!form.title.trim()) { alert('문항 세트 제목을 입력해주세요.'); return }
-    const sections = form.sections
-      .map(s => ({ ...s, promptHtml: sanitizePassageHtml(s.promptHtml || '') }))
-      .filter(s => !isEmptyHtml(s.promptHtml) || s.heading.trim() || s.drawImage?.url)
-      .map((s, i) => ({
-        id: s.id,
-        // 학생 화면의 진행 칩, 리플레이, 채점 패널이 전부 heading을 문항 이름으로 쓰므로
-        // 비워두면 번호로 채운다.
-        groupLabel: '',
-        heading: s.heading.trim() || `문항 ${i + 1}`,
-        guidance: '',
-        promptHtml: isEmptyHtml(s.promptHtml) ? '' : s.promptHtml,
-        required: !!s.required,
-        wordLimitGuide: s.wordLimitGuide ? Number(s.wordLimitGuide) : null,
-        maxScore: s.maxScore ? Number(s.maxScore) : null,
-        drawImage: s.drawImage?.url
-          ? { url: s.drawImage.url, path: s.drawImage.path || '', w: Number(s.drawImage.w) || 0, h: Number(s.drawImage.h) || 0 }
-          : null
-      }))
+    if (!title.trim()) { alert('문항 세트 제목을 입력해주세요.'); return }
+    const { sections, questionGroups } = treeToTemplate(tree, { sanitize: sanitizePassageHtml, isEmpty: isEmptyHtml })
     if (sections.length === 0) { alert('문항을 하나 이상 입력해주세요.'); return }
 
-    const safeDescription = sanitizePassageHtml(form.descriptionHtml || '')
-    const descriptionHtml = isEmptyHtml(safeDescription) ? '' : safeDescription
+    const safeDescription = sanitizePassageHtml(descriptionHtml || '')
+    const cleanDescription = isEmptyHtml(safeDescription) ? '' : safeDescription
 
     setSaving(true)
     try {
       const payload = {
-        title: form.title.trim(),
+        title: title.trim(),
         // 공통 안내도 그림을 넣을 수 있게 서식 HTML(descriptionHtml)로 저장한다. description에는
         // 평문을 같이 남겨 두지만, 학생 화면은 descriptionHtml이 있으면 그쪽만 보여준다.
-        descriptionHtml,
-        description: htmlToText(descriptionHtml),
+        descriptionHtml: cleanDescription,
+        description: htmlToText(cleanDescription),
         sections,
+        questionGroups,
         kind: TEMPLATE_KIND_QUESTION_SET
       }
-      if (isEdit) {
-        await updateTemplate(templateId, payload)
-      } else {
-        await createTemplate(payload)
-      }
+      if (isEdit) await updateTemplate(templateId, payload)
+      else await createTemplate(payload)
       navigate('/admin/question-sets')
     } catch (err) {
       console.error('문항 세트 저장 실패:', err)
@@ -228,9 +218,7 @@ export default function QuestionSetEditor() {
     )
   }
 
-  const inputClass = 'w-full border border-gray-200 rounded-xl px-3 py-2 text-sm focus:outline-none focus:ring-2 focus:ring-indigo-300'
-  const labelClass = 'block text-xs font-bold text-gray-600 mb-1.5'
-  const totalMaxScore = form.sections.reduce((sum, s) => sum + (Number(s.maxScore) || 0), 0)
+  const totalMaxScore = treeTotalScore(tree)
 
   return (
     <div className="min-h-screen bg-gray-50 flex flex-col">
@@ -247,7 +235,7 @@ export default function QuestionSetEditor() {
       <main className="flex-1 p-5 max-w-4xl mx-auto w-full space-y-6">
         <div>
           <label className={labelClass}>문항 세트 제목</label>
-          <input className={inputClass} value={form.title} onChange={e => set('title', e.target.value)} placeholder="예: 2학기 물리학Ⅱ 서술형 평가" />
+          <input className={inputClass} value={title} onChange={e => setTitle(e.target.value)} placeholder="예: 2학기 물리학Ⅱ 서술형 평가" />
         </div>
 
         <ThemeProvider theme={theme}>
@@ -255,73 +243,96 @@ export default function QuestionSetEditor() {
             <div>
               <label className={labelClass}>공통 안내 (선택, 학생 화면 상단에 표시 — 그림도 붙여넣을 수 있습니다)</label>
               <RichTextEditor
-                value={form.descriptionHtml}
-                onChange={html => set('descriptionHtml', html)}
-                placeholder="예: 풀이 과정을 반드시 쓰시오. 단위를 빠뜨리면 감점됩니다. (모든 문항에 공통으로 쓰는 그림·표도 여기에)"
+                value={descriptionHtml}
+                onChange={setDescriptionHtml}
+                placeholder="예: 풀이 과정을 반드시 쓰시오. 단위를 빠뜨리면 감점됩니다."
               />
             </div>
 
-            <div className="space-y-4">
-              {form.sections.map((q, idx) => (
-                <div key={q.id} className="bg-white rounded-2xl border border-gray-200 p-4 space-y-3">
-                  <div className="flex items-center justify-between gap-3">
-                    <span className="text-sm font-bold text-indigo-700 flex-shrink-0">문항 {idx + 1}</span>
-                    <input
-                      className={`${inputClass} flex-1`}
-                      value={q.heading}
-                      onChange={e => setQuestion(idx, { heading: e.target.value })}
-                      placeholder={`문항 이름 (선택, 비우면 "문항 ${idx + 1}")`}
-                    />
-                    <div className="flex items-center gap-1 flex-shrink-0">
-                      <button onClick={() => moveQuestion(idx, -1)} disabled={idx === 0} title="위로" className="text-gray-300 hover:text-indigo-600 disabled:opacity-30 disabled:hover:text-gray-300 px-1.5">▲</button>
-                      <button onClick={() => moveQuestion(idx, 1)} disabled={idx === form.sections.length - 1} title="아래로" className="text-gray-300 hover:text-indigo-600 disabled:opacity-30 disabled:hover:text-gray-300 px-1.5">▼</button>
-                      <button onClick={() => removeQuestion(idx)} title="삭제" className="text-gray-300 hover:text-red-500 px-1.5">✕</button>
-                    </div>
-                  </div>
+            <p className="rounded-xl bg-indigo-50 px-3 py-2 text-xs leading-relaxed text-indigo-700">
+              문항마다 <b>공통 내용</b>(상황·자료·그림)을 쓰고, 그 아래에 <b>하위 문항</b>(1-1, 1-2 …)을 추가하세요.
+              하위 문항마다 지시문·배점·답안 칸이 따로 생기고, 학생 화면에서는 지시문이 그 답안 칸 바로 위에 보입니다.
+              하위 문항을 만들지 않으면 그 문항 자체가 답을 쓰는 문항이 됩니다.
+            </p>
 
-                  <div>
-                    <label className="block text-xs text-gray-400 mb-1">문항 내용 — 글을 쓰고, 그림은 붙여넣거나(Ctrl+V) 끌어다 놓으면 됩니다. '/'를 치면 서식 메뉴가 뜹니다.</label>
-                    <RichTextEditor
-                      value={q.promptHtml}
-                      onChange={html => setQuestion(idx, { promptHtml: html })}
-                      placeholder="문항을 입력하세요."
-                    />
-                  </div>
-
-                  <DrawImageField value={q.drawImage} onChange={drawImage => setQuestion(idx, { drawImage })} />
-
-                  <div className="flex flex-wrap items-center gap-4">
-                    <label className="flex items-center gap-1.5 text-xs text-gray-600">
-                      <input type="checkbox" checked={q.required} onChange={e => setQuestion(idx, { required: e.target.checked })} />
-                      필수 응답
-                    </label>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs text-gray-400">배점</span>
+            <div className="space-y-5">
+              {tree.map((p, pi) => {
+                const n = pi + 1
+                const hasChildren = p.children.length > 0
+                return (
+                  <div key={p.id} className="bg-white rounded-2xl border border-gray-200 p-4 space-y-3">
+                    <div className="flex items-center justify-between gap-3">
+                      <span className="text-sm font-bold text-indigo-700 flex-shrink-0">{autoParentHeading(n)}</span>
                       <input
-                        type="number"
-                        className={`${inputClass} w-20`}
-                        value={q.maxScore ?? ''}
-                        onChange={e => setQuestion(idx, { maxScore: e.target.value })}
-                        placeholder="예: 10"
+                        className={`${inputClass} flex-1`}
+                        value={p.heading}
+                        onChange={e => setParent(pi, { heading: e.target.value })}
+                        placeholder={`문항 이름 (선택, 비우면 "${autoParentHeading(n)}")`}
+                      />
+                      <div className="flex items-center gap-1 flex-shrink-0">
+                        <button onClick={() => moveParent(pi, -1)} disabled={pi === 0} title="위로" className={iconBtn}>▲</button>
+                        <button onClick={() => moveParent(pi, 1)} disabled={pi === tree.length - 1} title="아래로" className={iconBtn}>▼</button>
+                        <button onClick={() => removeParent(pi)} title="문항 삭제" className="text-gray-300 hover:text-red-500 px-1.5">✕</button>
+                      </div>
+                    </div>
+
+                    <div>
+                      <label className="block text-xs text-gray-400 mb-1">
+                        {hasChildren
+                          ? '공통 내용 — 하위 문항들 위에 한 번 보이는 상황·자료·그림입니다. (비워 둬도 됩니다)'
+                          : "문항 내용 — 글을 쓰고, 그림은 붙여넣거나(Ctrl+V) 끌어다 놓으면 됩니다. '/'를 치면 서식 메뉴가 뜹니다."}
+                      </label>
+                      <RichTextEditor
+                        value={p.promptHtml}
+                        onChange={html => setParent(pi, { promptHtml: html })}
+                        placeholder={hasChildren ? '상황·자료를 입력하세요.' : '문항을 입력하세요.'}
                       />
                     </div>
-                    <div className="flex items-center gap-1.5">
-                      <span className="text-xs text-gray-400">분량 가이드(자, 선택)</span>
-                      <input
-                        type="number"
-                        className={`${inputClass} w-24`}
-                        value={q.wordLimitGuide ?? ''}
-                        onChange={e => setQuestion(idx, { wordLimitGuide: e.target.value })}
-                        placeholder="예: 200"
-                      />
-                    </div>
+
+                    {!hasChildren && <AnswerOptions item={p} onChange={patch => setParent(pi, patch)} />}
+
+                    {hasChildren && (
+                      <div className="space-y-3 border-l-2 border-indigo-100 pl-4">
+                        {p.children.map((c, ci) => (
+                          <div key={c.id} className="rounded-xl border border-gray-200 bg-gray-50/60 p-3 space-y-3">
+                            <div className="flex items-center justify-between gap-3">
+                              <span className="text-sm font-bold text-gray-700 flex-shrink-0">{autoChildHeading(n, ci + 1)}</span>
+                              <input
+                                className={`${inputClass} flex-1 bg-white`}
+                                value={c.heading}
+                                onChange={e => setChild(pi, ci, { heading: e.target.value })}
+                                placeholder={`하위 문항 이름 (선택, 비우면 "${autoChildHeading(n, ci + 1)}")`}
+                              />
+                              <div className="flex items-center gap-1 flex-shrink-0">
+                                <button onClick={() => moveChild(pi, ci, -1)} disabled={ci === 0} title="위로" className={iconBtn}>▲</button>
+                                <button onClick={() => moveChild(pi, ci, 1)} disabled={ci === p.children.length - 1} title="아래로" className={iconBtn}>▼</button>
+                                <button onClick={() => removeChild(pi, ci)} title="하위 문항 삭제" className="text-gray-300 hover:text-red-500 px-1.5">✕</button>
+                              </div>
+                            </div>
+                            <div>
+                              <label className="block text-xs text-gray-400 mb-1">지시문 — 학생 답안 칸 바로 위에 보입니다. 이 하위 문항에만 필요한 조건·그림도 여기에.</label>
+                              <RichTextEditor
+                                value={c.promptHtml}
+                                onChange={html => setChild(pi, ci, { promptHtml: html })}
+                                placeholder="예: 그래프의 면적을 이용하여 팽창하는 동안 기체가 한 일을 구하시오."
+                              />
+                            </div>
+                            <AnswerOptions item={c} onChange={patch => setChild(pi, ci, patch)} />
+                          </div>
+                        ))}
+                      </div>
+                    )}
+
+                    <button onClick={() => addChildTo(pi)} className="text-xs font-medium text-indigo-600 hover:text-indigo-800">
+                      + 하위 문항 추가{!hasChildren && ' (지금 쓴 내용은 공통 내용이 되고, 배점·그림 위 표시는 첫 하위 문항으로 옮겨집니다)'}
+                    </button>
                   </div>
-                </div>
-              ))}
+                )
+              })}
             </div>
           </ToastProvider>
         </ThemeProvider>
-        <button onClick={addQuestion} className="text-sm text-indigo-600 hover:text-indigo-800 font-medium">+ 문항 추가</button>
+        <button onClick={addParent} className="text-sm text-indigo-600 hover:text-indigo-800 font-medium">+ 문항 추가</button>
 
         <div className="flex gap-2 pt-2">
           <button onClick={() => navigate('/admin/question-sets')} className="flex-1 py-2.5 rounded-xl border border-gray-200 text-gray-600 text-sm font-medium hover:bg-gray-50">
@@ -338,4 +349,17 @@ export default function QuestionSetEditor() {
       </main>
     </div>
   )
+}
+
+function escapeHtml(text) {
+  return text.replace(/&/g, '&amp;').replace(/</g, '&lt;').replace(/>/g, '&gt;')
+}
+
+// 공통 안내가 평문(description)만 있던 초기 문항 세트를 열면 서식 편집기에 옮겨 담는다.
+function plainToHtml(text) {
+  return (text || '')
+    .split(/\n{2,}/)
+    .filter(Boolean)
+    .map(block => `<p>${escapeHtml(block).replace(/\n/g, '<br/>')}</p>`)
+    .join('')
 }

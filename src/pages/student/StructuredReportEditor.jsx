@@ -6,6 +6,7 @@ import { sanitizePassageHtml } from '../../utils/sanitizeHtml.js'
 import ExperimentReport from '../../components/experiment/ExperimentReport.jsx'
 import SketchCanvas from '../../components/sketch/SketchCanvas.jsx'
 import { sectionHasAnswer } from '../../utils/sketch.js'
+import { groupMap } from '../../utils/questionTree.js'
 
 function scrollToSection(id) {
   document.getElementById(`section-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -36,6 +37,8 @@ export default function StructuredReportEditor({ template, sections, onChange, d
   }
 
   let lastGroup = null
+  // 문항 세트의 트리 구조: 하위 문항이 있는 문항의 공통 내용(자료·상황) — utils/questionTree.js
+  const groups = groupMap(template)
 
   return (
     // flex-shrink-0: 지문이 있는 배정에서는 오른쪽 작성 칸(overflow-y-auto)의 flex 자식이다 —
@@ -76,18 +79,28 @@ export default function StructuredReportEditor({ template, sections, onChange, d
 
       <div className="space-y-6">
         {template.sections.map(sec => {
-          const showGroupHeader = sec.groupLabel && sec.groupLabel !== lastGroup
-          lastGroup = sec.groupLabel
+          const groupKey = sec.groupId || sec.groupLabel
+          const showGroupHeader = groupKey && groupKey !== lastGroup
+          lastGroup = groupKey
+          const group = sec.groupId ? groups.get(sec.groupId) : null
           const answer = sections[sec.id] || { text: '' }
 
           return (
             <React.Fragment key={sec.id}>
               {showGroupHeader && (
-                <h2 className="text-sm font-bold text-indigo-700 border-b border-indigo-100 pb-1.5 pt-1">
-                  {sec.groupLabel}
-                </h2>
+                <div className="pt-1">
+                  <h2 className="text-sm font-bold text-indigo-700 border-b border-indigo-100 pb-1.5">
+                    {group?.label || sec.groupLabel}
+                  </h2>
+                  {group?.promptHtml && (
+                    <div
+                      className="passage-rich mt-2 rounded-xl border border-indigo-100 bg-indigo-50/40 p-4 text-sm leading-relaxed text-gray-800"
+                      dangerouslySetInnerHTML={{ __html: sanitizePassageHtml(group.promptHtml) }}
+                    />
+                  )}
+                </div>
               )}
-              <div id={`section-${sec.id}`} className="scroll-mt-24">
+              <div id={`section-${sec.id}`} className={`scroll-mt-24 ${group ? 'border-l-2 border-indigo-100 pl-3' : ''}`}>
                 {sec.heading && (
                   <label className="mb-1 flex items-center gap-2 text-sm font-bold text-gray-800">
                     {sec.heading}

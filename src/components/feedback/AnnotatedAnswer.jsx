@@ -8,6 +8,7 @@ import {
 import ExperimentReport from '../experiment/ExperimentReport.jsx'
 import SketchCanvas from '../sketch/SketchCanvas.jsx'
 import { hasSketch } from '../../utils/sketch.js'
+import { groupMap } from '../../utils/questionTree.js'
 import StickyNote, { NoteBadge } from './StickyNote.jsx'
 
 export const ANSWER_HTML_CLASS = 'text-[15px] leading-relaxed text-gray-800 whitespace-pre-wrap [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-lg [&_table]:table-fixed [&_table]:mx-auto [&_table]:max-w-full [&_table]:border-collapse [&_table]:my-2 [&_td]:border [&_td]:border-gray-300 [&_td]:p-1.5 [&_td]:align-top [&_a]:text-indigo-600 [&_a]:underline'
@@ -437,20 +438,33 @@ export default function AnnotatedAnswer({
   let body
   if (usesSections) {
     let lastGroup = null
+    const groups = groupMap(template)
     body = sections.length === 0
       ? <p className="text-sm text-gray-300">양식을 불러오지 못했습니다.</p>
       : (
         <div className="space-y-4">
           {sections.map(sec => {
-            const showGroup = sec.groupLabel && sec.groupLabel !== lastGroup
-            lastGroup = sec.groupLabel
+            const groupKey = sec.groupId || sec.groupLabel
+            const showGroup = groupKey && groupKey !== lastGroup
+            lastGroup = groupKey
+            const group = sec.groupId ? groups.get(sec.groupId) : null
             const html = sanitizeAnswerHtml((content ? content.sections?.[sec.id] : submission?.sections?.[sec.id]?.text) || '')
             // 그림 위 표시는 수정 비교 스냅샷(content)에 없어서 항상 현재 제출물 것을 보여 준다
             const ink = submission?.sections?.[sec.id]?.ink
             const showSketch = Boolean(sec.drawImage?.url)
             return (
               <React.Fragment key={sec.id}>
-                {showGroup && <h2 className="text-sm font-bold text-indigo-700 border-b border-indigo-100 pb-1.5 pt-2">{sec.groupLabel}</h2>}
+                {showGroup && (
+                  <div className="pt-2">
+                    <h2 className="text-sm font-bold text-indigo-700 border-b border-indigo-100 pb-1.5">{group?.label || sec.groupLabel}</h2>
+                    {group?.promptHtml && (
+                      <details className="mt-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-xs text-gray-500">
+                        <summary className="cursor-pointer select-none">공통 내용 보기</summary>
+                        <div className="passage-rich mt-2 text-sm text-gray-700" dangerouslySetInnerHTML={{ __html: sanitizePassageHtml(group.promptHtml) }} />
+                      </details>
+                    )}
+                  </div>
+                )}
                 <div>
                   {sec.heading && <h3 className="text-sm font-bold text-gray-800 mb-1">{sec.heading}</h3>}
                   {sec.promptHtml && (
