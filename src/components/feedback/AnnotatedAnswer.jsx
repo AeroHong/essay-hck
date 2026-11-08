@@ -6,6 +6,8 @@ import {
   resolveElementAnchor, textAnchorFromRange
 } from '../../utils/feedbackAnchors.js'
 import ExperimentReport from '../experiment/ExperimentReport.jsx'
+import SketchCanvas from '../sketch/SketchCanvas.jsx'
+import { hasSketch } from '../../utils/sketch.js'
 import StickyNote, { NoteBadge } from './StickyNote.jsx'
 
 export const ANSWER_HTML_CLASS = 'text-[15px] leading-relaxed text-gray-800 whitespace-pre-wrap [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-lg [&_table]:table-fixed [&_table]:mx-auto [&_table]:max-w-full [&_table]:border-collapse [&_table]:my-2 [&_td]:border [&_td]:border-gray-300 [&_td]:p-1.5 [&_td]:align-top [&_a]:text-indigo-600 [&_a]:underline'
@@ -443,6 +445,9 @@ export default function AnnotatedAnswer({
             const showGroup = sec.groupLabel && sec.groupLabel !== lastGroup
             lastGroup = sec.groupLabel
             const html = sanitizeAnswerHtml((content ? content.sections?.[sec.id] : submission?.sections?.[sec.id]?.text) || '')
+            // 그림 위 표시는 수정 비교 스냅샷(content)에 없어서 항상 현재 제출물 것을 보여 준다
+            const ink = submission?.sections?.[sec.id]?.ink
+            const showSketch = Boolean(sec.drawImage?.url)
             return (
               <React.Fragment key={sec.id}>
                 {showGroup && <h2 className="text-sm font-bold text-indigo-700 border-b border-indigo-100 pb-1.5 pt-2">{sec.groupLabel}</h2>}
@@ -454,11 +459,18 @@ export default function AnnotatedAnswer({
                       <div className="passage-rich mt-2 text-sm text-gray-700" dangerouslySetInnerHTML={{ __html: sanitizePassageHtml(sec.promptHtml) }} />
                     </details>
                   )}
+                  {showSketch && (
+                    <div className="mb-2">
+                      {hasSketch(ink)
+                        ? <SketchCanvas image={sec.drawImage} value={ink} readOnly />
+                        : <p className="text-sm text-gray-300">(그림 위 표시 없음)</p>}
+                    </div>
+                  )}
                   {sec.type === 'experiment'
                     ? (experimentResult
                       ? <div ref={el => registerSection(sec.id, el)}><div data-fb-experiment><ExperimentReport result={experimentResult} /></div></div>
                       : <p className="text-sm text-gray-300">(실험 결과 미제출)</p>)
-                    : renderHtml(sec.id, html)}
+                    : (showSketch && !html ? null : renderHtml(sec.id, html))}
                   {renderInlineNotes(sec.id)}
                 </div>
               </React.Fragment>

@@ -4,6 +4,8 @@ import { htmlToPlainText } from '../../utils/richText.js'
 import { linkifyText } from '../../utils/linkifyText.js'
 import { sanitizePassageHtml } from '../../utils/sanitizeHtml.js'
 import ExperimentReport from '../../components/experiment/ExperimentReport.jsx'
+import SketchCanvas from '../../components/sketch/SketchCanvas.jsx'
+import { sectionHasAnswer } from '../../utils/sketch.js'
 
 function scrollToSection(id) {
   document.getElementById(`section-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -57,7 +59,7 @@ export default function StructuredReportEditor({ template, sections, onChange, d
         {template.sections.map(sec => {
           const filled = sec.type === 'experiment'
             ? Boolean(experimentResult)
-            : htmlToPlainText(sections[sec.id]?.text || '').trim().length > 0
+            : sectionHasAnswer(sections[sec.id], htmlToPlainText(sections[sec.id]?.text || ''))
           return (
             <button
               key={sec.id}
@@ -106,6 +108,17 @@ export default function StructuredReportEditor({ template, sections, onChange, d
                     className="passage-rich mb-3 rounded-xl border border-gray-200 bg-white p-4 text-sm leading-relaxed text-gray-800"
                     dangerouslySetInnerHTML={{ __html: sanitizePassageHtml(sec.promptHtml) }}
                   />
+                )}
+                {/* 그림 위 표시 — 문항에 배경 그림(drawImage)이 있으면 그 위에 빗금·펜으로 답한다 */}
+                {sec.drawImage?.url && (
+                  <div className="mb-3">
+                    <SketchCanvas
+                      image={sec.drawImage}
+                      value={answer.ink}
+                      readOnly={disabled}
+                      onChange={ink => updateSection(sec.id, { ink })}
+                    />
+                  </div>
                 )}
                 {sec.type === 'experiment' ? (
                   // 실험 결과 섹션: 입력란 대신 Motion Tracker에서 제출한 보고서가 자동으로 들어간다

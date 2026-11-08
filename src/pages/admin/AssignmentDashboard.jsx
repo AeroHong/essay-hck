@@ -17,6 +17,7 @@ import LeaveAlerts from '../../components/LeaveAlerts.jsx'
 import { isFocusGuardActive, formatDuration } from '../../utils/focusGuard.js'
 import ExperimentReport from '../../components/experiment/ExperimentReport.jsx'
 import { subscribeExperimentResults, formatFitValue } from '../../services/experiments.js'
+import { sectionHasAnswer } from '../../utils/sketch.js'
 import { hasClassroomConfig, signInToClassroom, listMyCourses, createCourseWork, updateCourseWorkDescription, courseWorkExists, getClassroomErrorMessage, getCourseStudentCount, listCourseStudents, isClassroomConnected } from '../../services/classroom.js'
 
 /** handlePublishToClassroom과 반드시 같은 문구를 써야 한다 — "설명 동기화" 버튼이
@@ -646,7 +647,7 @@ export default function AssignmentDashboard() {
     // 실험 결과 섹션은 글을 쓰는 칸이 아니라 작성 진행도에서 뺀다 (실험 열에서 따로 보여줌)
     const secs = (template?.sections || []).filter(s => s.type !== 'experiment')
     if (!secs.length) return null
-    const done = secs.filter(s => htmlToPlainText(sub.sections?.[s.id]?.text || '').trim().length > 0).length
+    const done = secs.filter(s => sectionHasAnswer(sub.sections?.[s.id], htmlToPlainText(sub.sections?.[s.id]?.text || ''))).length
     return { done, total: secs.length }
   }
 

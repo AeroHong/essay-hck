@@ -9,13 +9,66 @@ import { sanitizePassageHtml, isEmptyHtml, htmlToText } from '../../../utils/san
 import { theme } from '../../../theme.js'
 import RichTextEditor from '../../../components/richtext/RichTextEditor.jsx'
 import ToastProvider from '../../../components/richtext/ToastProvider.jsx'
+import { uploadPassageImage, isImageFile } from '../../../services/storage.js'
 
 function makeSectionId() {
   return `sec_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
 }
 
 function emptyQuestion() {
-  return { id: makeSectionId(), heading: '', promptHtml: '', required: true, wordLimitGuide: null, maxScore: null }
+  return { id: makeSectionId(), heading: '', promptHtml: '', required: true, wordLimitGuide: null, maxScore: null, drawImage: null }
+}
+
+// 그림 위 표시용 배경 그림의 원래 크기 — 학생 화면에서 그림 비율대로 표시 칸을 잡는 데 쓴다
+function readImageSize(url) {
+  return new Promise((resolve, reject) => {
+    const img = new Image()
+    img.onload = () => resolve({ w: img.naturalWidth, h: img.naturalHeight })
+    img.onerror = () => reject(new Error('그림을 불러오지 못했습니다.'))
+    img.src = url
+  })
+}
+
+/** 문항별 '그림 위 표시' 설정 — 배경 그림을 올리면 학생이 그 위에 빗금·펜으로 답한다 */
+function DrawImageField({ value, onChange }) {
+  const inputRef = React.useRef(null)
+  const [busy, setBusy] = useState(false)
+
+  async function handleFile(file) {
+    if (!file) return
+    if (!isImageFile(file)) { alert('그림 파일(png, jpg 등)만 올릴 수 있습니다.'); return }
+    setBusy(true)
+    try {
+      const uploaded = await uploadPassageImage(file)
+      const size = await readImageSize(uploaded.url)
+      onChange({ url: uploaded.url, path: uploaded.path, ...size })
+    } catch (err) {
+      console.error('그림 업로드 실패:', err)
+      alert(err.message || '그림을 올리지 못했습니다.')
+    } finally {
+      setBusy(false)
+      if (inputRef.current) inputRef.current.value = ''
+    }
+  }
+
+  return (
+    <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <span className="text-xs font-bold text-gray-600">그림 위 표시 (선택)</span>
+        <span className="text-xs text-gray-400">그림을 올리면 학생이 그 위에 빗금·펜·직선으로 표시해 답합니다. 글 답안 칸도 함께 나옵니다.</span>
+        <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={e => handleFile(e.target.files?.[0])} />
+        <span className="ml-auto flex gap-1.5">
+          <button type="button" disabled={busy} onClick={() => inputRef.current?.click()} className="rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-100 disabled:opacity-40">
+            {busy ? '올리는 중…' : value?.url ? '그림 바꾸기' : '그림 올리기'}
+          </button>
+          {value?.url && (
+            <button type="button" onClick={() => onChange(null)} className="rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs text-red-500 hover:bg-red-50">빼기</button>
+          )}
+        </span>
+      </div>
+      {value?.url && <img src={value.url} alt="그림 위 표시 배경" className="mt-2 max-h-64 rounded-lg border border-gray-200 bg-white" />}
+    </div>
+  )
 }
 
 const emptyForm = { title: '', descriptionHtml: '', sections: [emptyQuestion()] }
@@ -110,7 +163,7 @@ export default function QuestionSetEditor() {
     if (!form.title.trim()) { alert('문항 세트 제목을 입력해주세요.'); return }
     const sections = form.sections
       .map(s => ({ ...s, promptHtml: sanitizePassageHtml(s.promptHtml || '') }))
-      .filter(s => !isEmptyHtml(s.promptHtml) || s.heading.trim())
+      .filter(s => !isEmptyHtml(s.promptHtml) || s.heading.trim() || s.drawImage?.url)
       .map((s, i) => ({
         id: s.id,
         // 학생 화면의 진행 칩, 리플레이, 채점 패널이 전부 heading을 문항 이름으로 쓰므로
@@ -121,7 +174,10 @@ export default function QuestionSetEditor() {
         promptHtml: isEmptyHtml(s.promptHtml) ? '' : s.promptHtml,
         required: !!s.required,
         wordLimitGuide: s.wordLimitGuide ? Number(s.wordLimitGuide) : null,
-        maxScore: s.maxScore ? Number(s.maxScore) : null
+        maxScore: s.maxScore ? Number(s.maxScore) : null,
+        drawImage: s.drawImage?.url
+          ? { url: s.drawImage.url, path: s.drawImage.path || '', w: Number(s.drawImage.w) || 0, h: Number(s.drawImage.h) || 0 }
+          : null
       }))
     if (sections.length === 0) { alert('문항을 하나 이상 입력해주세요.'); return }
 
@@ -231,6 +287,8 @@ export default function QuestionSetEditor() {
                       placeholder="문항을 입력하세요."
                     />
                   </div>
+
+                  <DrawImageField value={q.drawImage} onChange={drawImage => setQuestion(idx, { drawImage })} />
 
                   <div className="flex flex-wrap items-center gap-4">
                     <label className="flex items-center gap-1.5 text-xs text-gray-600">

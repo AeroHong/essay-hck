@@ -29,6 +29,7 @@ import ExperimentReport from '../../components/experiment/ExperimentReport.jsx'
 import AnnotatedAnswer from '../../components/feedback/AnnotatedAnswer.jsx'
 import { subscribeFeedback } from '../../services/feedback.js'
 import { subscribeExperimentResult, buildExperimentUrl, EXPERIMENT_MODES } from '../../services/experiments.js'
+import { sectionHasAnswer } from '../../utils/sketch.js'
 
 // 피드백이 없을 때도 같은 배열을 넘겨 AnnotatedAnswer가 매 렌더마다 형광펜을 다시 씌우지 않게 한다.
 const EMPTY_NOTES = []
@@ -364,7 +365,7 @@ export default function EssayWritePage() {
 
   const requiredMissing = usesSections
     // 실험 결과 섹션은 글을 쓰는 칸이 아니라 제외 — 실험 제출 여부는 experimentMissing이 따로 본다
-    ? (template?.sections || []).filter(s => s.type !== 'experiment' && s.required && !htmlToPlainText(sections[s.id]?.text || '').trim())
+    ? (template?.sections || []).filter(s => s.type !== 'experiment' && s.required && !sectionHasAnswer(sections[s.id], htmlToPlainText(sections[s.id]?.text || '')))
     : []
   const experimentMissing = hasExperiment && assignment.experiment.required !== false && !experimentResult
   const canSubmit = !experimentMissing && (usesSections
