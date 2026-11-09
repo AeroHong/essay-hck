@@ -4,7 +4,8 @@ import { htmlToPlainText } from '../../utils/richText.js'
 import { linkifyText } from '../../utils/linkifyText.js'
 import { sanitizePassageHtml } from '../../utils/sanitizeHtml.js'
 import ExperimentReport from '../../components/experiment/ExperimentReport.jsx'
-import SketchCanvas from '../../components/sketch/SketchCanvas.jsx'
+import SketchCanvas, { PromptInk } from '../../components/sketch/SketchCanvas.jsx'
+import { PROMPT_BOX_CLASS, GROUP_BOX_CLASS } from '../../components/sketch/promptBoxes.js'
 import { sectionHasAnswer } from '../../utils/sketch.js'
 import { groupMap } from '../../utils/questionTree.js'
 
@@ -93,10 +94,19 @@ export default function StructuredReportEditor({ template, sections, onChange, d
                     {group?.label || sec.groupLabel}
                   </h2>
                   {group?.promptHtml && (
-                    <div
-                      className="passage-rich mt-2 rounded-xl border border-indigo-100 bg-indigo-50/40 p-4 text-sm leading-relaxed text-gray-800"
-                      dangerouslySetInnerHTML={{ __html: sanitizePassageHtml(group.promptHtml) }}
-                    />
+                    // 공통 내용 위 풀이 필기 — 그 문항 첫 칸(sec)의 groupInk에 저장(답으로 치지 않음)
+                    <div className="mt-2">
+                      <PromptInk
+                        ink={answer.groupInk}
+                        readOnly={disabled}
+                        onChange={groupInk => updateSection(sec.id, { groupInk })}
+                      >
+                        <div
+                          className={GROUP_BOX_CLASS}
+                          dangerouslySetInnerHTML={{ __html: sanitizePassageHtml(group.promptHtml) }}
+                        />
+                      </PromptInk>
+                    </div>
                   )}
                 </div>
               )}
@@ -117,10 +127,19 @@ export default function StructuredReportEditor({ template, sections, onChange, d
                 )}
                 {/* 서술형 문항 세트(kind: 'question_set')의 문항 본문 — 그림·서식 포함 */}
                 {sec.promptHtml && (
-                  <div
-                    className="passage-rich mb-3 rounded-xl border border-gray-200 bg-white p-4 text-sm leading-relaxed text-gray-800"
-                    dangerouslySetInnerHTML={{ __html: sanitizePassageHtml(sec.promptHtml) }}
-                  />
+                  // 문항 위 풀이 필기(밑줄·메모·보조선) — sections[id].promptInk, 답으로 치지 않음
+                  <div className="mb-3">
+                    <PromptInk
+                      ink={answer.promptInk}
+                      readOnly={disabled}
+                      onChange={promptInk => updateSection(sec.id, { promptInk })}
+                    >
+                      <div
+                        className={PROMPT_BOX_CLASS}
+                        dangerouslySetInnerHTML={{ __html: sanitizePassageHtml(sec.promptHtml) }}
+                      />
+                    </PromptInk>
+                  </div>
                 )}
                 {/* 그림 위 표시 — 문항에 배경 그림(drawImage)이 있으면 그 위에 빗금·펜으로 답한다 */}
                 {sec.drawImage?.url && (
@@ -140,8 +159,9 @@ export default function StructuredReportEditor({ template, sections, onChange, d
                     : <p className="rounded-xl border border-dashed border-gray-300 bg-white px-4 py-6 text-center text-sm text-gray-400">
                         위의 [실험 시작]으로 영상을 분석하고 "과제에 결과 제출"을 누르면 여기에 실험 보고서가 자동으로 들어갑니다.
                       </p>
-                ) : <div className="min-h-[180px]">
+                ) : sec.drawImage?.url ? null : <div>
                   <EssayEditor
+                    minHeight={120}
                     value={answer.text || ''}
                     onChange={html => updateSection(sec.id, { text: html, charCount: htmlToPlainText(html).length })}
                     disabled={disabled}

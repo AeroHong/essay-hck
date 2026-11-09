@@ -51,7 +51,7 @@ function DrawImageField({ value, onChange }) {
     <div className="rounded-xl border border-dashed border-gray-200 bg-gray-50 p-3">
       <div className="flex flex-wrap items-center gap-2">
         <span className="text-xs font-bold text-gray-600">그림 위 표시 (선택)</span>
-        <span className="text-xs text-gray-400">그림을 올리면 학생이 그 위에 빗금·펜·직선으로 표시해 답합니다. 글 답안 칸도 함께 나옵니다.</span>
+        <span className="text-xs text-gray-400">그림 자체가 답인 문항용 — 학생이 그 위에 빗금·펜·직선으로 표시해 답하고, 글 답안 칸은 나오지 않습니다. (풀이용 그래프는 문항 내용에 넣으면 학생이 문항 위에 바로 필기할 수 있습니다)</span>
         <input ref={inputRef} type="file" accept="image/*" className="hidden" onChange={e => handleFile(e.target.files?.[0])} />
         <span className="ml-auto flex gap-1.5">
           <button type="button" disabled={busy} onClick={() => inputRef.current?.click()} className="rounded-lg border border-gray-200 bg-white px-2.5 py-1 text-xs text-gray-600 hover:bg-gray-100 disabled:opacity-40">

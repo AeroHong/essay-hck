@@ -170,3 +170,23 @@ export function normalizeSketch(ink) {
     ((it.kind === 'hatch' || !it.kind) && Array.isArray(it.pts) && it.pts.length >= 2 && it.pts.every(Number.isFinite))
   ))
 }
+
+// ─── 손가락 스크롤 ────────────────────────────────────────────────────────────
+// 그림 위에서는 iPad Pencil이 페이지를 끌고 가지 않도록 touch-action:none을 유지하고, 대신
+// 손가락(touch) 끌기를 직접 스크롤로 바꾼다. 그림이 태블릿 화면 폭에 꽉 차서 그림 위를
+// 밀지 못하면 스크롤할 곳이 양옆 여백뿐이었다(실기기 신고, 2026-11-09).
+
+/** el에서 위로 올라가며 실제로 세로로 넘치는 스크롤 칸을 찾는다(없으면 문서 전체) */
+export function findScrollParent(el) {
+  for (let n = el?.parentElement; n && n !== document.body && n !== document.documentElement; n = n.parentElement) {
+    const oy = window.getComputedStyle(n).overflowY
+    if ((oy === 'auto' || oy === 'scroll') && n.scrollHeight > n.clientHeight + 1) return n
+  }
+  return document.scrollingElement || document.documentElement
+}
+
+/** 손을 뗀 뒤 관성 스크롤: 한 프레임(ms) 지나고 남는 속도(px/ms). 충분히 느려지면 0 */
+export function decayVelocity(v, dt, { friction = 0.0025, stop = 0.02 } = {}) {
+  const next = v * Math.exp(-friction * dt)
+  return Math.abs(next) < stop ? 0 : next
+}

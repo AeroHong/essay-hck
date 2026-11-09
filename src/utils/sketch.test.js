@@ -88,3 +88,14 @@ describe('normalizeSketch', () => {
     expect(sketchSize([ok])).toBe(12)
   })
 })
+
+describe('decayVelocity', () => {
+  it('시간이 지나면 속도가 줄고, 충분히 느려지면 0이 된다', async () => {
+    const { decayVelocity } = await import('./sketch.js')
+    const v = decayVelocity(2, 16)
+    expect(v).toBeGreaterThan(0)
+    expect(v).toBeLessThan(2)
+    expect(decayVelocity(0.0205, 16)).toBe(0)
+    expect(decayVelocity(-2, 16)).toBeLessThan(0)
+  })
+})

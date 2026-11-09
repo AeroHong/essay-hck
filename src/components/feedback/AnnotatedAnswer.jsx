@@ -6,7 +6,8 @@ import {
   resolveElementAnchor, textAnchorFromRange
 } from '../../utils/feedbackAnchors.js'
 import ExperimentReport from '../experiment/ExperimentReport.jsx'
-import SketchCanvas from '../sketch/SketchCanvas.jsx'
+import SketchCanvas, { PromptInk } from '../sketch/SketchCanvas.jsx'
+import { PROMPT_BOX_CLASS, GROUP_BOX_CLASS } from '../sketch/promptBoxes.js'
 import { hasSketch } from '../../utils/sketch.js'
 import { groupMap } from '../../utils/questionTree.js'
 import StickyNote, { NoteBadge } from './StickyNote.jsx'
@@ -452,6 +453,10 @@ export default function AnnotatedAnswer({
             // 그림 위 표시는 수정 비교 스냅샷(content)에 없어서 항상 현재 제출물 것을 보여 준다
             const ink = submission?.sections?.[sec.id]?.ink
             const showSketch = Boolean(sec.drawImage?.url)
+            // 학생이 문항·공통 내용 위에 한 풀이 필기(참고용, 답 아님)
+            const promptInk = submission?.sections?.[sec.id]?.promptInk
+            const groupInk = submission?.sections?.[sec.id]?.groupInk
+            const inkMark = (v) => (v?.items?.length ? ' · ✏️ 학생 풀이 필기 있음' : '')
             return (
               <React.Fragment key={sec.id}>
                 {showGroup && (
@@ -459,8 +464,12 @@ export default function AnnotatedAnswer({
                     <h2 className="text-sm font-bold text-indigo-700 border-b border-indigo-100 pb-1.5">{group?.label || sec.groupLabel}</h2>
                     {group?.promptHtml && (
                       <details className="mt-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-xs text-gray-500">
-                        <summary className="cursor-pointer select-none">공통 내용 보기</summary>
-                        <div className="passage-rich mt-2 text-sm text-gray-700" dangerouslySetInnerHTML={{ __html: sanitizePassageHtml(group.promptHtml) }} />
+                        <summary className="cursor-pointer select-none">공통 내용 보기{inkMark(groupInk)}</summary>
+                        <div className="mt-2">
+                          <PromptInk ink={groupInk} readOnly>
+                            <div className={GROUP_BOX_CLASS} dangerouslySetInnerHTML={{ __html: sanitizePassageHtml(group.promptHtml) }} />
+                          </PromptInk>
+                        </div>
                       </details>
                     )}
                   </div>
@@ -469,8 +478,12 @@ export default function AnnotatedAnswer({
                   {sec.heading && <h3 className="text-sm font-bold text-gray-800 mb-1">{sec.heading}</h3>}
                   {sec.promptHtml && (
                     <details className="mb-2 rounded-lg border border-gray-100 bg-gray-50 px-3 py-2 text-xs text-gray-500">
-                      <summary className="cursor-pointer select-none">문항 보기</summary>
-                      <div className="passage-rich mt-2 text-sm text-gray-700" dangerouslySetInnerHTML={{ __html: sanitizePassageHtml(sec.promptHtml) }} />
+                      <summary className="cursor-pointer select-none">문항 보기{inkMark(promptInk)}</summary>
+                      <div className="mt-2">
+                        <PromptInk ink={promptInk} readOnly>
+                          <div className={PROMPT_BOX_CLASS} dangerouslySetInnerHTML={{ __html: sanitizePassageHtml(sec.promptHtml) }} />
+                        </PromptInk>
+                      </div>
                     </details>
                   )}
                   {showSketch && (

@@ -174,7 +174,9 @@ export default function EssayEditor({
   onLogInput,
   onLogKeydown,
   onLogPaste,
-  placeholder = '이곳에 답안을 작성하세요…'
+  placeholder = '이곳에 답안을 작성하세요…',
+  // 빈 입력칸의 최소 높이(px). 자유서술 한 칸은 넉넉하게, 문항별 칸은 작게(내용이 늘면 저절로 커진다)
+  minHeight = 320
 }) {
   const isComposingRef = useRef(false)
   const editorRef = useRef(null)
@@ -1203,7 +1205,8 @@ export default function EssayEditor({
           onBlur={() => { setActiveTable(null); setCellSelection(null) }}
           onCompositionStart={() => { isComposingRef.current = true }}
           onCompositionEnd={handleCompositionEnd}
-          className={`relative min-h-[320px] w-full rounded-2xl border px-5 py-4 text-[15px] leading-relaxed transition-colors focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-lg [&_table]:table-fixed [&_table]:mx-auto [&_table]:max-w-full [&_table]:border-collapse [&_table]:my-2 [&_td]:border [&_td]:border-gray-300 [&_td]:p-1.5 [&_td]:align-top [&_a]:text-indigo-600 [&_a]:underline ${
+          style={{ minHeight }}
+          className={`relative w-full rounded-2xl border px-5 py-4 text-[15px] leading-relaxed transition-colors focus:outline-none focus:ring-2 focus:ring-blue-200 focus:border-blue-300 [&_ul]:list-disc [&_ul]:pl-5 [&_ol]:list-decimal [&_ol]:pl-5 [&_img]:max-w-full [&_img]:h-auto [&_img]:rounded-lg [&_table]:table-fixed [&_table]:mx-auto [&_table]:max-w-full [&_table]:border-collapse [&_table]:my-2 [&_td]:border [&_td]:border-gray-300 [&_td]:p-1.5 [&_td]:align-top [&_a]:text-indigo-600 [&_a]:underline ${
             disabled ? 'bg-gray-50 text-gray-500 border-gray-200 cursor-not-allowed' : 'bg-white text-gray-800 border-gray-200'
           }`}
         />
