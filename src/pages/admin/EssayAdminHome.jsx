@@ -133,7 +133,7 @@ export default function EssayAdminHome() {
                       </span>
                       <h3 className="min-w-0 flex-1 truncate font-bold text-slate-900">{a.title || '(제목 없음)'}</h3>
                     </div>
-                    <p className="mt-2 text-sm text-slate-500">마감 {formatDate(a.dueAt)}</p>
+                    <p className="mt-2 text-sm text-slate-500">{a.dueAt ? `마감 ${formatDate(a.dueAt)}` : "마감일 없음"}</p>
                     {classrooms.length > 0 && (
                       <p className="mt-1 truncate text-xs text-emerald-700">
                         🎓 {classrooms.map(c => c.courseName).filter(Boolean).join(', ')}
