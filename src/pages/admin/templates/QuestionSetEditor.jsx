@@ -14,6 +14,7 @@ import { theme } from '../../../theme.js'
 import RichTextEditor from '../../../components/richtext/RichTextEditor.jsx'
 import ToastProvider from '../../../components/richtext/ToastProvider.jsx'
 import { uploadPassageImage, isImageFile } from '../../../services/storage.js'
+import AppHeader from '../../../components/brand/AppHeader.jsx'
 
 // 그림 위 표시용 배경 그림의 원래 크기 — 학생 화면에서 그림 비율대로 표시 칸을 잡는 데 쓴다
 function readImageSize(url) {
@@ -201,7 +202,7 @@ export default function QuestionSetEditor() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+      <div className="flex items-center justify-center min-h-screen bg-canvas">
         <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
       </div>
     )
@@ -209,7 +210,7 @@ export default function QuestionSetEditor() {
 
   if (accessDenied) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50 px-4">
+      <div className="flex items-center justify-center min-h-screen bg-canvas px-4">
         <div className="text-center">
           <p className="text-gray-500 mb-4">다른 교사가 만든 문항 세트라 수정할 수 없습니다.</p>
           <button onClick={() => navigate('/admin/question-sets')} className="text-indigo-600 text-sm underline">돌아가기</button>
@@ -221,16 +222,10 @@ export default function QuestionSetEditor() {
   const totalMaxScore = treeTotalScore(tree)
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3 shadow-sm sticky top-0 z-10">
-        <button onClick={() => navigate('/admin/question-sets')} className="text-gray-400 hover:text-gray-600 transition-colors">
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <h1 className="text-base font-bold text-gray-900">{isEdit ? '문항 세트 수정' : '새 문항 세트 만들기'}</h1>
-        {totalMaxScore > 0 && <span className="ml-auto text-xs text-gray-500">총 배점 {totalMaxScore}점</span>}
-      </header>
+    <div className="min-h-screen bg-canvas flex flex-col">
+      <AppHeader title={isEdit ? '문항 세트 수정' : '새 문항 세트 만들기'} onBack={() => navigate('/admin/question-sets')}>
+        {totalMaxScore > 0 && <span className="text-xs text-gray-500">총 배점 {totalMaxScore}점</span>}
+      </AppHeader>
 
       <main className="flex-1 p-5 max-w-4xl mx-auto w-full space-y-6">
         <div>

@@ -19,6 +19,7 @@ import ExperimentReport from '../../components/experiment/ExperimentReport.jsx'
 import { subscribeExperimentResults, formatFitValue } from '../../services/experiments.js'
 import { sectionHasAnswer } from '../../utils/sketch.js'
 import { hasClassroomConfig, signInToClassroom, listMyCourses, createCourseWork, updateCourseWorkDescription, courseWorkExists, getClassroomErrorMessage, getCourseStudentCount, listCourseStudents, isClassroomConnected } from '../../services/classroom.js'
+import AppHeader from '../../components/brand/AppHeader.jsx'
 
 /** handlePublishToClassroom과 반드시 같은 문구를 써야 한다 — "설명 동기화" 버튼이
  * 이미 게시된 과제를 이 문구로 덮어쓰기 때문. */
@@ -673,7 +674,7 @@ export default function AssignmentDashboard() {
 
   if (accessDenied) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
+      <div className="flex min-h-screen items-center justify-center bg-canvas px-4">
         <div className="text-center">
           <p className="text-gray-500 mb-4">다른 교사가 만든 배정이라 볼 수 없습니다.</p>
           <button onClick={() => navigate('/admin')} className="text-indigo-600 text-sm underline">돌아가기</button>
@@ -683,18 +684,9 @@ export default function AssignmentDashboard() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3 shadow-sm sticky top-0 z-10">
-        <button onClick={() => navigate('/admin')} className="text-gray-400 hover:text-gray-600 transition-colors">
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <div>
-          <h1 className="text-base font-bold text-gray-900">{assignment?.title || '배정'}</h1>
-          <p className="text-xs text-gray-500">{passage?.title || (isStructured ? template?.title : '')}</p>
-        </div>
-        <div className="ml-auto flex items-center gap-3">
+    <div className="min-h-screen bg-canvas flex flex-col">
+      <AppHeader title={assignment?.title || '배정'} subtitle={passage?.title || (isStructured ? template?.title : '')} onBack={() => navigate('/admin')}>
+        <div className="flex items-center gap-3">
           {/* 마감한 배정은 진행 표시·남은 시간·일시정지/시작 버튼을 모두 숨기고 마감 표시만 한다 —
               예전엔 waitingRoomEnabled만 봐서 마감 후에도 "평가 진행 중 · 시간 종료 · 일시정지"가 남았다.
               "마감 해제"(추가 응시 포함)로 다시 열면 아래 진행 표시가 그대로 돌아온다. */}
@@ -809,7 +801,7 @@ export default function AssignmentDashboard() {
             </button>
           )}
         </div>
-      </header>
+      </AppHeader>
 
       <main className="flex-1 p-5 max-w-6xl mx-auto w-full">
         {assignment && (

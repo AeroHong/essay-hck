@@ -30,6 +30,7 @@ import AnnotatedAnswer from '../../components/feedback/AnnotatedAnswer.jsx'
 import { subscribeFeedback } from '../../services/feedback.js'
 import { subscribeExperimentResult, buildExperimentUrl, EXPERIMENT_MODES } from '../../services/experiments.js'
 import { sectionHasAnswer } from '../../utils/sketch.js'
+import { LogoMark } from '../../components/brand/Logo.jsx'
 
 // 피드백이 없을 때도 같은 배열을 넘겨 AnnotatedAnswer가 매 렌더마다 형광펜을 다시 씌우지 않게 한다.
 const EMPTY_NOTES = []
@@ -316,7 +317,7 @@ export default function EssayWritePage() {
     }
   }, { delay: 700 })
 
-  const { logInput, logKeydown, logPaste, flushNow: flushLogs } = useEssayLogger(submission?.id)
+  const { logInput, logKeydown, logInk, logPaste, flushNow: flushLogs } = useEssayLogger(submission?.id)
   const { updateTyping } = usePresence({ assignmentId, uid: user?.uid, enabled: !locked && !makeupBlocked })
 
   // 작성 로그(리플레이용)와 presence("입력 중" 표시)는 같은 입력 이벤트에서 함께 갱신한다 —
@@ -346,6 +347,11 @@ export default function EssayWritePage() {
 
   function handleLogInput(entry) {
     logInput(entry)
+    updateTyping()
+  }
+  // 필기도 입력으로 본다 — 대시보드 접속 현황에 '입력중'으로 뜨게
+  function handleLogInk(entry) {
+    logInk(entry)
     updateTyping()
   }
   function handleLogKeydown(k, sectionId) {
@@ -429,7 +435,7 @@ export default function EssayWritePage() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+      <div className="flex items-center justify-center min-h-screen bg-canvas">
         <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
       </div>
     )
@@ -437,7 +443,7 @@ export default function EssayWritePage() {
 
   if (error) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+      <div className="flex items-center justify-center min-h-screen bg-canvas">
         <div className="text-center">
           <p className="text-gray-500 mb-4">{error}</p>
           <button onClick={() => navigate('/')} className="text-indigo-600 text-sm underline">홈으로</button>
@@ -448,7 +454,7 @@ export default function EssayWritePage() {
 
   if (makeupBlocked) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50 px-4">
+      <div className="flex items-center justify-center min-h-screen bg-canvas px-4">
         <div className="text-center">
           <p className="text-3xl mb-2">🔒</p>
           <p className="text-gray-800 font-bold mb-1">마감된 평가입니다</p>
@@ -461,7 +467,7 @@ export default function EssayWritePage() {
 
   if (needsIdentity) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50 px-4">
+      <div className="flex items-center justify-center min-h-screen bg-canvas px-4">
         <form onSubmit={handleIdentitySubmit} className="w-full max-w-sm bg-white rounded-2xl shadow-sm border border-gray-200 p-6">
           <p className="text-3xl mb-2 text-center">🙋</p>
           <p className="text-gray-800 font-bold text-center mb-1">학번과 이름을 알려주세요</p>
@@ -516,7 +522,7 @@ export default function EssayWritePage() {
   const totalMaxScore = (template?.sections || []).reduce((sum, s) => sum + (s.maxScore || 0), 0)
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
+    <div className="min-h-screen bg-canvas flex flex-col">
       {focusGuardOn && !waiting && !examEntered && (
         <FocusGuardOverlay mode="start" onStart={handleExamEnter} />
       )}
@@ -550,14 +556,17 @@ export default function EssayWritePage() {
           </button>
         </div>
       )}
-      <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3 shadow-sm sticky top-0 z-10">
-        <button onClick={() => navigate(-1)} className="text-gray-400 hover:text-gray-600 transition-colors">
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
+      <header className="sticky top-0 z-10 flex min-h-[60px] items-center gap-3 border-b border-slate-200/80 bg-white/95 px-4 py-2.5 backdrop-blur">
+        <button
+          onClick={() => navigate(-1)}
+          className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl text-lg text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+          aria-label="뒤로"
+        >
+          ←
         </button>
-        <div>
-          <h1 className="text-base font-bold text-gray-900">{assignment.title || '서술형 수행평가'}</h1>
+        <LogoMark size={30} className="hidden shrink-0 sm:block" />
+        <div className="min-w-0">
+          <h1 className="truncate text-base font-extrabold tracking-tight text-gray-900">{assignment.title || '서술형 평가'}</h1>
           <p className="text-xs text-gray-500">
             {userInfo?.name || user?.displayName} {userInfo?.class && `· ${userInfo.class}반`}
           </p>
@@ -697,6 +706,7 @@ export default function EssayWritePage() {
                     logInput={handleLogInput}
                     logKeydown={handleLogKeydown}
                     logPaste={logPaste}
+                    logInk={locked ? undefined : handleLogInk}
                     scores={sectionScores}
                     experimentResult={experimentResult}
                   />

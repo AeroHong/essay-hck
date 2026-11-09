@@ -9,6 +9,7 @@ import {
 } from '../../services/users.js'
 import { listPassages, listAssignments } from '../../services/essay.js'
 import { listTemplates } from '../../services/reportTemplates.js'
+import AppHeader from '../../components/brand/AppHeader.jsx'
 
 function formatDate(ts) {
   if (!ts?.toDate) return '—'
@@ -85,35 +86,25 @@ export default function SuperAdminHome() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="bg-white border-b border-gray-200 px-5 py-3 flex items-center justify-between shadow-sm sticky top-0 z-10">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-purple-600 rounded-lg flex items-center justify-center">
-            <span className="text-white text-xs font-bold">🔑</span>
-          </div>
-          <div>
-            <h1 className="text-base font-bold text-gray-900">관리자</h1>
-            <p className="text-xs text-gray-500">Super Admin · 교사 계정 관리</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate('/help')}
-            className="text-xs text-gray-600 hover:text-gray-800 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 font-medium transition-colors"
-          >
-            ❓ 사용법
-          </button>
-          <span className="text-sm text-gray-600 hidden sm:block">{userInfo?.name || user?.displayName}</span>
-          <button
-            onClick={async () => { await signOut(auth); navigate('/login') }}
-            className="text-xs text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50"
-          >
-            로그아웃
-          </button>
-        </div>
-      </header>
+    <div className="min-h-screen flex flex-col">
+      <AppHeader homeTo="/admin">
+        <span className="hidden rounded-full bg-brand-soft px-2.5 py-1 text-xs font-semibold text-brand-dark sm:block">관리자 · 교사 계정 관리</span>
+        <span className="hidden text-sm font-medium text-slate-600 sm:block">{userInfo?.name || user?.displayName}</span>
+        <button
+          onClick={() => navigate('/help')}
+          className="inline-flex min-h-[36px] items-center rounded-xl px-3 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100"
+        >
+          사용법
+        </button>
+        <button
+          onClick={async () => { await signOut(auth); navigate('/login') }}
+          className="inline-flex min-h-[36px] items-center rounded-xl border border-slate-200 px-3 text-sm font-medium text-slate-500 transition-colors hover:bg-slate-50"
+        >
+          로그아웃
+        </button>
+      </AppHeader>
 
-      <main className="flex-1 p-5 max-w-3xl mx-auto w-full space-y-8">
+      <main className="flex-1 px-4 py-8 sm:px-6 max-w-3xl mx-auto w-full space-y-8">
         {loading ? (
           <div className="flex justify-center py-16">
             <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />

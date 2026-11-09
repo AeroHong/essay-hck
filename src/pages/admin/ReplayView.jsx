@@ -9,6 +9,12 @@ import AnnotatedAnswer from '../../components/feedback/AnnotatedAnswer.jsx'
 import RevisionCompare from '../../components/feedback/RevisionCompare.jsx'
 import { subscribeExperimentResult } from '../../services/experiments.js'
 import { saveFeedbackNotes, setFeedbackReleased, subscribeFeedback } from '../../services/feedback.js'
+import AppHeader from '../../components/brand/AppHeader.jsx'
+import SketchCanvas, { PromptInk } from '../../components/sketch/SketchCanvas.jsx'
+import { PROMPT_BOX_CLASS, GROUP_BOX_CLASS } from '../../components/sketch/promptBoxes.js'
+import { inkLayerKey } from '../../utils/inkLog.js'
+import { groupMap } from '../../utils/questionTree.js'
+import { sanitizePassageHtml } from '../../utils/sanitizeHtml.js'
 
 // 노트가 없을 때도 같은 배열을 넘겨야 AnnotatedAnswer가 매 렌더마다 형광펜을 다시 씌우지 않는다.
 const EMPTY_NOTES = []
@@ -172,6 +178,51 @@ function mergeSectionInputEvents(events, sections) {
   })
 }
 
+const INK_LAYER_LABEL = { group: '공통 내용 위 풀이 필기', prompt: '문항 위 풀이 필기', ink: '그림 답안' }
+
+/**
+ * 작성 과정 재생의 필기 — 그 시점까지 복원한 층(state: inkLayerKey → {items, w})을 문항 내용·배경 그림과
+ * 함께 다시 그린다. 문항 위 필기는 학생 화면과 같은 상자 모양(promptBoxes.js)이라야 글자 위치가 맞는다.
+ */
+function InkReplayLayers({ template, state }) {
+  const groups = groupMap(template)
+  const rows = []
+  for (const sec of template?.sections || []) {
+    const group = sec.groupId ? groups.get(sec.groupId) : null
+    for (const layer of ['group', 'prompt', 'ink']) {
+      const v = state.get(inkLayerKey(sec.id, layer))
+      if (!v?.items?.length) continue
+      let body = null
+      if (layer === 'ink' && sec.drawImage?.url) {
+        body = <SketchCanvas image={sec.drawImage} value={v.items} readOnly />
+      } else if (layer === 'prompt' && sec.promptHtml) {
+        body = (
+          <PromptInk ink={v} readOnly>
+            <div className={PROMPT_BOX_CLASS} dangerouslySetInnerHTML={{ __html: sanitizePassageHtml(sec.promptHtml) }} />
+          </PromptInk>
+        )
+      } else if (layer === 'group' && group?.promptHtml) {
+        body = (
+          <PromptInk ink={v} readOnly>
+            <div className={GROUP_BOX_CLASS} dangerouslySetInnerHTML={{ __html: sanitizePassageHtml(group.promptHtml) }} />
+          </PromptInk>
+        )
+      }
+      if (!body) continue
+      rows.push(
+        <div key={`${sec.id}|${layer}`}>
+          <p className="mb-1 text-xs font-semibold text-gray-600">
+            {layer === 'group' ? (group?.label || sec.groupLabel) : (sec.heading || sec.groupLabel || '문항')} · {INK_LAYER_LABEL[layer]}
+          </p>
+          {body}
+        </div>
+      )
+    }
+  }
+  if (!rows.length) return <p className="text-sm text-gray-300">(이 시점까지 필기 없음)</p>
+  return <div className="space-y-4">{rows}</div>
+}
+
 /** structured 제출물은 AI 신호가 섹션별로 쌓이므로, 전체 보기에서는 섹션들을 합쳐서 보여준다. */
 function aggregateAiFlags(submission) {
   const flagsList = Object.values(submission?.sections || {}).map(s => s.aiFlags).filter(Boolean)
@@ -303,14 +354,16 @@ export default function ReplayView() {
       return {
         inputEvents: mergeSectionInputEvents(logs.inputEvents, template.sections || []),
         keydownEvents: logs.keydownEvents,
-        pasteEvents: logs.pasteEvents
+        pasteEvents: logs.pasteEvents,
+        inkEvents: logs.inkEvents || []
       }
     }
     if (!sectionId) return logs
     return {
       inputEvents: logs.inputEvents.filter(e => e.sectionId === sectionId),
       keydownEvents: logs.keydownEvents.filter(e => e.sectionId === sectionId),
-      pasteEvents: logs.pasteEvents.filter(e => e.sectionId === sectionId)
+      pasteEvents: logs.pasteEvents.filter(e => e.sectionId === sectionId),
+      inkEvents: (logs.inkEvents || []).filter(e => e.sectionId === sectionId)
     }
   }, [logs, template, sectionId])
 
@@ -348,18 +401,8 @@ export default function ReplayView() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="print:hidden bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3 shadow-sm sticky top-0 z-10">
-        <button onClick={() => navigate(`/admin/assignments/${assignmentId}`)} className="text-gray-400 hover:text-gray-600 transition-colors">
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <div>
-          <h1 className="text-base font-bold text-gray-900">{submission?.studentName || '작성 과정 재생'}</h1>
-          <p className="text-xs text-gray-500">{submission?.studentClass ? `${submission.studentClass}반` : ''}</p>
-        </div>
-      </header>
+    <div className="min-h-screen bg-canvas flex flex-col">
+      <AppHeader title={submission?.studentName || '작성 과정 재생'} subtitle={<>{submission?.studentClass ? `${submission.studentClass}반` : ''}</>} onBack={() => navigate(`/admin/assignments/${assignmentId}`)} className="print:hidden" />
 
       {/* 화면에선 안 보이고 인쇄(PDF 저장)할 때만 보이는 제목 — header가 print:hidden이라 대신 필요 */}
       <div className="hidden print:block mb-3">
@@ -492,6 +535,8 @@ export default function ReplayView() {
                 inputEvents={filteredLogs.inputEvents}
                 keydownEvents={filteredLogs.keydownEvents}
                 pasteEvents={filteredLogs.pasteEvents}
+                inkEvents={filteredLogs.inkEvents || []}
+                renderInk={state => <InkReplayLayers template={template} state={state} />}
                 aiFlags={aiFlags}
               />
             </section>

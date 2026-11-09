@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { useAuth } from '../../../App.jsx'
 import { getTemplate, createTemplate, updateTemplate, getTemplateKind, TEMPLATE_KIND_QUESTION_SET } from '../../../services/reportTemplates.js'
+import AppHeader from '../../../components/brand/AppHeader.jsx'
 
 function makeSectionId() {
   return `sec_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 7)}`
@@ -109,7 +110,7 @@ export default function TemplateEditor() {
 
   if (loading) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50">
+      <div className="flex items-center justify-center min-h-screen bg-canvas">
         <div className="w-10 h-10 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
       </div>
     )
@@ -117,7 +118,7 @@ export default function TemplateEditor() {
 
   if (accessDenied) {
     return (
-      <div className="flex items-center justify-center min-h-screen bg-gray-50 px-4">
+      <div className="flex items-center justify-center min-h-screen bg-canvas px-4">
         <div className="text-center">
           <p className="text-gray-500 mb-4">다른 교사가 만든 양식이라 수정할 수 없습니다.</p>
           <button onClick={() => navigate('/admin/templates')} className="text-indigo-600 text-sm underline">돌아가기</button>
@@ -130,15 +131,8 @@ export default function TemplateEditor() {
   const labelClass = 'block text-xs font-bold text-gray-600 mb-1.5'
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3 shadow-sm sticky top-0 z-10">
-        <button onClick={() => navigate('/admin/templates')} className="text-gray-400 hover:text-gray-600 transition-colors">
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <h1 className="text-base font-bold text-gray-900">{isEdit ? '양식 수정' : '새 양식 만들기'}</h1>
-      </header>
+    <div className="min-h-screen bg-canvas flex flex-col">
+      <AppHeader title={isEdit ? '양식 수정' : '새 양식 만들기'} onBack={() => navigate('/admin/templates')} />
 
       <main className="flex-1 p-5 max-w-3xl mx-auto w-full space-y-6">
         <div>

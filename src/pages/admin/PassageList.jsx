@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../App.jsx'
 import { listPassages, updatePassage, deletePassage, listAssignmentsUsingPassage } from '../../services/essay.js'
+import AppHeader from '../../components/brand/AppHeader.jsx'
 
 export default function PassageList() {
   const navigate = useNavigate()
@@ -35,21 +36,15 @@ export default function PassageList() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3 shadow-sm sticky top-0 z-10">
-        <button onClick={() => navigate('/admin')} className="text-gray-400 hover:text-gray-600 transition-colors">
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <h1 className="text-base font-bold text-gray-900">지문 관리</h1>
+    <div className="min-h-screen bg-canvas flex flex-col">
+      <AppHeader title="지문 관리" onBack={() => navigate('/admin')}>
         <button
           onClick={() => navigate('/admin/passages/new')}
-          className="ml-auto text-sm bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-xl px-4 py-2 transition-colors active:scale-95"
+          className="text-sm bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-xl px-4 py-2 transition-colors active:scale-95"
         >
           + 새 지문
         </button>
-      </header>
+      </AppHeader>
 
       <main className="flex-1 p-5 max-w-4xl mx-auto w-full">
         {loading ? (

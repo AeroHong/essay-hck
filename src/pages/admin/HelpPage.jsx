@@ -2,6 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate } from 'react-router-dom'
 import { useAuth } from '../../App.jsx'
 import TeacherRequestCard from '../../components/TeacherRequestCard.jsx'
+import AppHeader from '../../components/brand/AppHeader.jsx'
 
 // 교사용 사용법 페이지(/help). 화면 이미지는 public/help/*.jpg — 실제 교사 계정 화면을
 // 촬영해 넣었다. 이미지가 없으면(아직 촬영 전) 그 자리만 조용히 비운다.
@@ -52,7 +53,7 @@ const SECTIONS = [
           <li>관리자가 승인하면 새로고침 없이 교사 홈(배정 목록)으로 바뀝니다. 승인 전에도 이 사용법 페이지는 볼 수 있습니다.</li>
         </Steps>
         <figure className="my-4">
-          <div className="mx-auto max-w-md rounded-2xl bg-gradient-to-br from-indigo-50 via-white to-violet-50 p-4" aria-hidden="true">
+          <div className="mx-auto max-w-md rounded-2xl bg-canvas p-4" aria-hidden="true">
             <TeacherRequestCard preview />
           </div>
           <figcaption className="mt-1.5 text-center text-xs text-gray-400">처음 로그인한 화면 — 교사 권한 요청하기</figcaption>
@@ -248,23 +249,17 @@ export default function HelpPage() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50">
-      <header className="sticky top-0 z-10 flex items-center gap-3 border-b border-gray-200 bg-white px-4 py-3 shadow-sm">
-        <button onClick={() => navigate(backTo)} className="text-gray-400 transition-colors hover:text-gray-600" aria-label="돌아가기">
-          <svg className="h-5 w-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <h1 className="text-base font-bold text-gray-900">❓ 사용법</h1>
+    <div className="min-h-screen bg-canvas">
+      <AppHeader title="❓ 사용법" onBack={() => navigate(backTo)}>
         {!user && (
           <button
             onClick={() => navigate('/login')}
-            className="ml-auto rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
+            className="rounded-lg bg-indigo-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-indigo-700"
           >
             로그인
           </button>
         )}
-      </header>
+      </AppHeader>
 
       {/* 좁은 화면: 가로 스크롤 목차 */}
       <nav className="sticky top-[53px] z-[9] flex gap-1.5 overflow-x-auto border-b border-gray-200 bg-white px-4 py-2 lg:hidden">

@@ -5,6 +5,7 @@ import {
   listTemplates, updateTemplate, deleteTemplate, listAssignmentsUsingTemplate,
   getTemplateKind
 } from '../../../services/reportTemplates.js'
+import AppHeader from '../../../components/brand/AppHeader.jsx'
 
 // 보고서 양식과 서술형 문항은 같은 컬렉션(reportTemplates)에 kind만 달리 저장되므로, 목록
 // 화면도 하나를 kind prop으로 나눠 쓴다.
@@ -65,21 +66,15 @@ export default function TemplateList({ kind = 'report' }) {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3 shadow-sm sticky top-0 z-10">
-        <button onClick={() => navigate('/admin')} className="text-gray-400 hover:text-gray-600 transition-colors">
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <h1 className="text-base font-bold text-gray-900">{config.title}</h1>
+    <div className="min-h-screen bg-canvas flex flex-col">
+      <AppHeader title={config.title} onBack={() => navigate('/admin')}>
         <button
           onClick={() => navigate(`${config.basePath}/new`)}
-          className="ml-auto text-sm bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-xl px-4 py-2 transition-colors active:scale-95"
+          className="text-sm bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-xl px-4 py-2 transition-colors active:scale-95"
         >
           {config.newLabel}
         </button>
-      </header>
+      </AppHeader>
 
       <main className="flex-1 p-5 max-w-4xl mx-auto w-full">
         <p className="text-xs text-gray-400 mb-4">{config.help}</p>

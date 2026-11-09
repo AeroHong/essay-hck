@@ -10,7 +10,7 @@ import React from 'react'
 export default function TeacherRequestCard({ state = 'idle', error = '', onRequest, preview = false }) {
   return (
     <div className="w-full overflow-hidden rounded-3xl border-2 border-indigo-200 bg-white shadow-lg">
-      <div className="bg-gradient-to-r from-indigo-600 to-violet-600 px-6 py-5 text-white">
+      <div className="bg-gradient-to-br from-brand-dark via-brand to-brand-light px-6 py-5 text-white">
         <p className="text-3xl">👩‍🏫</p>
         <p className="mt-2 text-xl font-bold">선생님이신가요?</p>
         <p className="mt-1 text-sm text-indigo-100">교사 권한을 요청하면 관리자 승인 후 지문·문항을 만들고 학생에게 배정할 수 있습니다.</p>

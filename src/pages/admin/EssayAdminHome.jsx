@@ -3,6 +3,7 @@ import { useNavigate } from 'react-router-dom'
 import { signOut } from 'firebase/auth'
 import { auth } from '../../firebase.js'
 import { useAuth } from '../../App.jsx'
+import AppHeader from '../../components/brand/AppHeader.jsx'
 import { listAssignments, deleteAssignment, countSubmissionsForAssignment, getAssignmentClassrooms } from '../../services/essay.js'
 
 const STATUS_LABEL = { open: '진행 중', closed: '마감' }
@@ -37,114 +38,130 @@ export default function EssayAdminHome() {
     reload()
   }
 
-  return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="bg-white border-b border-gray-200 px-5 py-3 flex items-center justify-between shadow-sm sticky top-0 z-30">
-        <div className="flex items-center gap-3">
-          <div className="w-8 h-8 bg-indigo-600 rounded-lg flex items-center justify-center">
-            <span className="text-white text-xs font-bold">✍️</span>
-          </div>
-          <div>
-            <h1 className="text-base font-bold text-gray-900">서술형 수행평가 관리</h1>
-            <p className="text-xs text-gray-500">교사</p>
-          </div>
-        </div>
-        <div className="flex items-center gap-3">
-          <button
-            onClick={() => navigate('/admin/question-sets')}
-            className="text-xs text-violet-600 hover:text-violet-800 border border-violet-200 rounded-lg px-3 py-1.5 hover:bg-violet-50 font-medium transition-colors"
-          >
-            📝 서술형 문항 관리
-          </button>
-          <button
-            onClick={() => navigate('/admin/templates')}
-            className="text-xs text-emerald-600 hover:text-emerald-800 border border-emerald-200 rounded-lg px-3 py-1.5 hover:bg-emerald-50 font-medium transition-colors"
-          >
-            📋 보고서 양식 관리
-          </button>
-          <button
-            onClick={() => navigate('/admin/passages')}
-            className="text-xs text-indigo-600 hover:text-indigo-800 border border-indigo-200 rounded-lg px-3 py-1.5 hover:bg-indigo-50 font-medium transition-colors"
-          >
-            📄 지문 관리
-          </button>
-          <button
-            onClick={() => navigate('/help')}
-            className="text-xs text-gray-600 hover:text-gray-800 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50 font-medium transition-colors"
-          >
-            ❓ 사용법
-          </button>
-          <span className="text-sm text-gray-600 hidden sm:block">{userInfo?.name || user?.displayName}</span>
-          <button
-            onClick={async () => { await signOut(auth); navigate('/login') }}
-            className="text-xs text-gray-500 hover:text-gray-700 border border-gray-200 rounded-lg px-3 py-1.5 hover:bg-gray-50"
-          >
-            로그아웃
-          </button>
-        </div>
-      </header>
+  const name = userInfo?.name || user?.displayName || ''
+  const today = new Date().toLocaleDateString('ko-KR', { month: 'long', day: 'numeric', weekday: 'long' })
+  const openCount = assignments.filter(a => a.status !== 'closed').length
 
-      <main className="flex-1 p-5 max-w-5xl mx-auto w-full">
-        <div className="flex items-center justify-between mb-4">
-          <h2 className="text-sm font-bold text-gray-700">배정 목록 ({assignments.length})</h2>
+  return (
+    <div className="min-h-screen flex flex-col">
+      <AppHeader z="z-30">
+        <span className="hidden text-sm font-medium text-slate-600 sm:block">{name && `${name} 선생님`}</span>
+        <button
+          onClick={() => navigate('/help')}
+          className="inline-flex min-h-[36px] items-center rounded-xl px-3 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100"
+        >
+          사용법
+        </button>
+        <button
+          onClick={async () => { await signOut(auth); navigate('/login') }}
+          className="inline-flex min-h-[36px] items-center rounded-xl border border-slate-200 px-3 text-sm font-medium text-slate-500 transition-colors hover:bg-slate-50"
+        >
+          로그아웃
+        </button>
+      </AppHeader>
+
+      <main className="mx-auto w-full max-w-6xl flex-1 space-y-8 px-4 py-8 sm:px-6">
+        <section className="flex flex-wrap items-end gap-4">
+          <div className="min-w-0 flex-1">
+            <p className="text-sm font-medium text-slate-500">{today}</p>
+            <h1 className="mt-1 text-2xl font-extrabold tracking-tight text-slate-900 sm:text-3xl">
+              안녕하세요{name ? `, ${name} 선생님` : ''} 👋
+            </h1>
+          </div>
           <button
             onClick={() => navigate('/admin/assignments/new')}
-            className="text-sm bg-indigo-600 hover:bg-indigo-700 text-white font-medium rounded-xl px-4 py-2 transition-colors active:scale-95"
+            className="inline-flex min-h-[44px] items-center rounded-xl bg-brand px-5 font-semibold text-white shadow-lg shadow-brand/20 transition hover:bg-brand-dark active:scale-95"
           >
             + 새 배정 만들기
           </button>
-        </div>
+        </section>
 
-        {loading ? (
-          <div className="flex justify-center py-16">
-            <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
+        {/* 자료 관리 — 예전엔 머리말의 색색 테두리 버튼이었다 */}
+        <section className="grid gap-3 sm:grid-cols-3">
+          {[
+            { to: '/admin/question-sets', icon: '📝', title: '서술형 문항', desc: '문항·하위 문항·배점·그림 위 표시' },
+            { to: '/admin/templates', icon: '📋', title: '보고서 양식', desc: '항목별로 나눠 쓰는 보고서 틀' },
+            { to: '/admin/passages', icon: '📄', title: '지문', desc: '읽고 답하는 글·자료' },
+          ].map(m => (
+            <button
+              key={m.to}
+              onClick={() => navigate(m.to)}
+              className="group flex items-center gap-3 rounded-2xl bg-white p-4 text-left shadow-sm ring-1 ring-slate-200 transition hover:-translate-y-0.5 hover:shadow-md hover:ring-brand/40"
+            >
+              <span className="flex h-11 w-11 shrink-0 items-center justify-center rounded-xl bg-brand-soft text-xl">{m.icon}</span>
+              <span className="min-w-0">
+                <span className="block font-bold text-slate-900">{m.title} 관리</span>
+                <span className="block truncate text-xs text-slate-500">{m.desc}</span>
+              </span>
+              <span className="ml-auto text-slate-300 transition group-hover:text-brand">→</span>
+            </button>
+          ))}
+        </section>
+
+        <section>
+          <div className="mb-3 flex items-baseline gap-2">
+            <h2 className="text-lg font-extrabold tracking-tight text-slate-900">배정</h2>
+            <span className="text-sm text-slate-500">전체 {assignments.length} · 진행 중 {openCount}</span>
           </div>
-        ) : assignments.length === 0 ? (
-          <div className="text-center py-16 text-gray-400 bg-white rounded-2xl border border-gray-200">
-            아직 만든 배정이 없습니다. 먼저 지문을 등록한 뒤 배정을 만들어보세요.
-          </div>
-        ) : (
-          <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
-            {assignments.map(a => (
-              <div
-                key={a.id}
-                onClick={() => navigate(`/admin/assignments/${a.id}`)}
-                className="text-left bg-white rounded-2xl border-2 border-gray-200 hover:border-indigo-300 hover:shadow-md p-4 transition-all cursor-pointer"
-              >
-                <div className="flex items-start justify-between mb-2 gap-2">
-                  <h3 className="font-bold text-gray-800 text-sm flex-1 min-w-0 truncate">{a.title || '(제목 없음)'}</h3>
-                  <div className="flex items-center gap-1.5 flex-shrink-0">
-                    <span className={`text-xs rounded-full px-2 py-0.5 border font-medium ${
-                      a.status === 'closed' ? 'bg-gray-100 text-gray-500 border-gray-200' : 'bg-blue-100 text-blue-700 border-blue-200'
-                    }`}>
-                      {STATUS_LABEL[a.status] || a.status}
-                    </span>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); navigate(`/admin/assignments/new?from=${a.id}`) }}
-                      title="이 배정을 복제해서 새 배정 만들기 (설정은 그대로, 제출물·Classroom 게시는 새로)"
-                      className="text-xs text-gray-400 hover:text-indigo-600 border border-gray-200 hover:border-indigo-200 rounded-md px-1.5 py-0.5 transition-colors"
-                    >
-                      복제
-                    </button>
-                    <button
-                      onClick={(e) => { e.stopPropagation(); handleDelete(a) }}
-                      title="배정 삭제"
-                      className="w-5 h-5 flex items-center justify-center rounded-full text-gray-300 hover:text-red-500 hover:bg-red-50 transition-colors text-sm leading-none"
-                    >
-                      ✕
-                    </button>
+
+          {loading ? (
+            <div className="flex justify-center py-16">
+              <div className="h-8 w-8 animate-spin rounded-full border-2 border-slate-300 border-t-brand" />
+            </div>
+          ) : assignments.length === 0 ? (
+            <div className="flex flex-col items-center rounded-3xl border-2 border-dashed border-slate-300 py-16 text-center">
+              <div className="text-4xl">🗂️</div>
+              <div className="mt-3 font-bold text-slate-800">아직 만든 배정이 없습니다</div>
+              <p className="mt-1 text-sm text-slate-500">먼저 문항이나 지문을 등록한 뒤 배정을 만들어 보세요.</p>
+            </div>
+          ) : (
+            <div className="grid grid-cols-1 gap-4 sm:grid-cols-2 xl:grid-cols-3">
+              {assignments.map(a => {
+                const closed = a.status === 'closed'
+                const classrooms = getAssignmentClassrooms(a)
+                return (
+                  <div
+                    key={a.id}
+                    onClick={() => navigate(`/admin/assignments/${a.id}`)}
+                    className="flex cursor-pointer flex-col rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 transition hover:-translate-y-0.5 hover:shadow-md hover:ring-brand/40"
+                  >
+                    <div className="flex items-start gap-2">
+                      <span className={`mt-0.5 shrink-0 rounded-full px-2 py-0.5 text-xs font-semibold ${
+                        closed ? 'bg-slate-100 text-slate-500' : 'bg-cyan-50 text-cyan-700 ring-1 ring-cyan-200'
+                      }`}>
+                        {STATUS_LABEL[a.status] || a.status}
+                      </span>
+                      <h3 className="min-w-0 flex-1 truncate font-bold text-slate-900">{a.title || '(제목 없음)'}</h3>
+                    </div>
+                    <p className="mt-2 text-sm text-slate-500">마감 {formatDate(a.dueAt)}</p>
+                    {classrooms.length > 0 && (
+                      <p className="mt-1 truncate text-xs text-emerald-700">
+                        🎓 {classrooms.map(c => c.courseName).filter(Boolean).join(', ')}
+                      </p>
+                    )}
+                    <div className="mt-4 flex items-center gap-1.5 border-t border-slate-100 pt-3">
+                      <span className="text-sm font-semibold text-brand">대시보드 →</span>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); navigate(`/admin/assignments/new?from=${a.id}`) }}
+                        title="이 배정을 복제해서 새 배정 만들기 (설정은 그대로, 제출물·Classroom 게시는 새로)"
+                        className="ml-auto rounded-lg px-2 py-1 text-xs font-medium text-slate-500 transition-colors hover:bg-slate-100 hover:text-slate-800"
+                      >
+                        복제
+                      </button>
+                      <button
+                        onClick={(e) => { e.stopPropagation(); handleDelete(a) }}
+                        title="배정 삭제"
+                        className="rounded-lg px-2 py-1 text-xs font-medium text-slate-400 transition-colors hover:bg-red-50 hover:text-red-600"
+                      >
+                        삭제
+                      </button>
+                    </div>
                   </div>
-                </div>
-                <p className="text-xs text-gray-400">마감: {formatDate(a.dueAt)}</p>
-                {getAssignmentClassrooms(a).length > 0 && (
-                  <p className="text-xs text-emerald-600 mt-1.5 truncate">
-                    🎓 Classroom 게시됨 — {getAssignmentClassrooms(a).map(c => c.courseName).filter(Boolean).join(', ')}
-                  </p>
-                )}
-              </div>
-            ))}
-          </div>
-        )}
+                )
+              })}
+            </div>
+          )}
+        </section>
       </main>
     </div>
   )

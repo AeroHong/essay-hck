@@ -23,7 +23,7 @@ export const theme = createTheme({
   },
   shape: { borderRadius: 8 },
   typography: {
-    fontFamily: '"Noto Sans KR", Roboto, sans-serif',
+    fontFamily: "'Pretendard Variable', Pretendard, 'Malgun Gothic', 'Apple SD Gothic Neo', sans-serif",
     h5: { fontWeight: 700 },
     h6: { fontWeight: 700 },
     subtitle1: { fontWeight: 600 }

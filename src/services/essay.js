@@ -741,16 +741,26 @@ export async function addPasteLog(subId, event) {
 }
 
 /**
+ * 필기 변화 이벤트 배치 저장(utils/inkLog.js) — 작성 과정 재생에서 필기를 다시 그리는 데 쓴다
+ * @param {string} subId
+ * @param {Array<{t:number, sectionId:string, layer:string, add?:Array, remove?:string[], w?:number}>} events
+ */
+export async function appendInkLogBatch(subId, events) {
+  await addDoc(collection(db, 'essaySubmissions', subId, 'inkLogs'), { events, createdAt: serverTimestamp() })
+}
+
+/**
  * 리플레이용 전체 로그 조회 — input/keydown/paste 서브컬렉션을 모두 읽어
  * 각 이벤트를 t 기준 하나의 타임라인으로 병합해 반환
  * @param {string} subId
  * @returns {Promise<{inputEvents: Array, keydownEvents: Array, pasteEvents: Array}>}
  */
 export async function getReplayLogs(subId) {
-  const [inputSnap, keydownSnap, pasteSnap] = await Promise.all([
+  const [inputSnap, keydownSnap, pasteSnap, inkSnap] = await Promise.all([
     getDocs(collection(db, 'essaySubmissions', subId, 'inputLogs')),
     getDocs(collection(db, 'essaySubmissions', subId, 'keydownLogs')),
-    getDocs(collection(db, 'essaySubmissions', subId, 'pasteLogs'))
+    getDocs(collection(db, 'essaySubmissions', subId, 'pasteLogs')),
+    getDocs(collection(db, 'essaySubmissions', subId, 'inkLogs'))
   ])
 
   const inputEvents = inputSnap.docs
@@ -765,7 +775,11 @@ export async function getReplayLogs(subId) {
     .map(d => ({ id: d.id, ...d.data() }))
     .sort((a, b) => a.t - b.t)
 
-  return { inputEvents, keydownEvents, pasteEvents }
+  const inkEvents = inkSnap.docs
+    .flatMap(d => d.data().events || [])
+    .sort((a, b) => a.t - b.t)
+
+  return { inputEvents, keydownEvents, pasteEvents, inkEvents }
 }
 
 // ─── 화면 이탈 기록 (제한시간 평가 전용, hooks/useFocusGuard.js) ─────────────

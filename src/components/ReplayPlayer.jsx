@@ -3,6 +3,7 @@ import { htmlToPlainText } from '../utils/richText.js'
 import { sanitizeAnswerHtml } from '../utils/sanitizeHtml.js'
 import { computeSurvivingPaste } from '../utils/pasteProvenance.js'
 import { renderMathInElement } from '../utils/mathExpression.js'
+import { replayInk, countStrokes } from '../utils/inkLog.js'
 
 function minMax(values) {
   let min = Infinity
@@ -103,11 +104,11 @@ function virtualToReal(segments, v) {
  * 건너뛰기 위함. 막대를 드래그하거나 클릭하면 즉시 그 시점으로 이동하고, 재생 버튼은 배속
  * (최대 300x)으로 진행한다.
  */
-export default function ReplayPlayer({ inputEvents, keydownEvents, pasteEvents, aiFlags }) {
+export default function ReplayPlayer({ inputEvents, keydownEvents, pasteEvents, inkEvents = [], renderInk, aiFlags }) {
   const replayRef = React.useRef(null)
   const allT = useMemo(
-    () => [...inputEvents.map(e => e.t), ...keydownEvents.map(e => e.t), ...pasteEvents.map(e => e.t)],
-    [inputEvents, keydownEvents, pasteEvents]
+    () => [...inputEvents.map(e => e.t), ...keydownEvents.map(e => e.t), ...pasteEvents.map(e => e.t), ...inkEvents.map(e => e.t)],
+    [inputEvents, keydownEvents, pasteEvents, inkEvents]
   )
   const [tMin, tMax] = useMemo(() => (allT.length ? minMax(allT) : [0, 0]), [allT])
 
@@ -161,6 +162,11 @@ export default function ReplayPlayer({ inputEvents, keydownEvents, pasteEvents, 
     return sanitizeAnswerHtml(html)
   }, [inputEvents, currentT])
 
+  // 필기: 그 시점까지의 획을 층별로 다시 만든다(utils/inkLog.js). 그리는 모양은 호출부(renderInk)가 정한다
+  // — 문항 내용·배경 그림을 아는 쪽이 ReplayView라서.
+  const inkState = useMemo(() => replayInk(inkEvents, currentT), [inkEvents, currentT])
+  const strokeTotal = useMemo(() => countStrokes(inkEvents), [inkEvents])
+
   const pastedCharTotal = pasteEvents.reduce((sum, e) => sum + (e.charCount || 0), 0)
 
   useEffect(() => { renderMathInElement(replayRef.current) }, [currentHtml])
@@ -187,7 +193,8 @@ export default function ReplayPlayer({ inputEvents, keydownEvents, pasteEvents, 
   function handleBarClick(e) {
     const rect = e.currentTarget.getBoundingClientRect()
     const frac = Math.min(1, Math.max(0, (e.clientX - rect.left) / rect.width))
-    seekTo(virtualToReal(segments, frac * totalVirtual))
+    // 맨 끝 근처를 누르면 마지막 이벤트(마지막 글자·획)까지 보이게 끝으로 맞춘다
+    seekTo(frac >= 0.99 ? tMax : virtualToReal(segments, frac * totalVirtual))
   }
 
   return (
@@ -196,7 +203,7 @@ export default function ReplayPlayer({ inputEvents, keydownEvents, pasteEvents, 
       <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
         {[
           { label: '실제 작성 시간', value: formatDuration(activeDurationMs) },
-          { label: '키 입력 수', value: keydownEvents.length.toLocaleString() },
+          { label: strokeTotal ? '키 입력 · 필기' : '키 입력 수', value: strokeTotal ? `${keydownEvents.length.toLocaleString()} · ${strokeTotal}획` : keydownEvents.length.toLocaleString() },
           { label: '붙여넣기', value: `${pasteEvents.length}회 · ${pastedCharTotal}자` },
           { label: '붙여넣기 비율(최종본 기준)', value: `${pasteRatio}%`, warn: pasteRatio >= 30 }
         ].map(({ label, value, warn }) => (
@@ -225,6 +232,13 @@ export default function ReplayPlayer({ inputEvents, keydownEvents, pasteEvents, 
       ) : (
         <div className="rounded-2xl border border-gray-200 bg-white px-5 py-4 min-h-[220px] text-[15px] leading-relaxed text-gray-300">
           (아직 입력 없음)
+        </div>
+      )}
+
+      {inkEvents.length > 0 && renderInk && (
+        <div className="rounded-2xl border border-gray-200 bg-white p-4">
+          <p className="mb-2 text-xs font-bold text-gray-500">✏️ 이 시점의 필기</p>
+          {renderInk(inkState)}
         </div>
       )}
 
@@ -309,6 +323,13 @@ export default function ReplayPlayer({ inputEvents, keydownEvents, pasteEvents, 
               style={{ left: `${(realToVirtual(segments, ev.t) / totalVirtual) * 100}%` }}
             />
           ))}
+          {inkEvents.map((ev, i) => (
+            <div
+              key={`ink${i}`}
+              className={`absolute bottom-0 h-1/2 w-[2px] ${ev.add?.length ? 'bg-emerald-500' : 'bg-emerald-200'}`}
+              style={{ left: `${(realToVirtual(segments, ev.t) / totalVirtual) * 100}%` }}
+            />
+          ))}
           {pasteEvents.map(ev => (
             <div
               key={ev.id}
@@ -327,6 +348,7 @@ export default function ReplayPlayer({ inputEvents, keydownEvents, pasteEvents, 
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-blue-400 inline-block" /> 입력</span>
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-red-400 inline-block" /> 삭제</span>
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-orange-500 inline-block" /> 붙여넣기</span>
+          {inkEvents.length > 0 && <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-full bg-emerald-500 inline-block" /> 필기</span>}
           <span className="flex items-center gap-1"><span className="w-2 h-2 rounded-sm bg-gray-200 inline-block" /> 무입력 구간(압축됨)</span>
         </div>
       </div>

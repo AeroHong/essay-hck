@@ -19,6 +19,7 @@ import TemplateEditor from './pages/admin/templates/TemplateEditor.jsx'
 import QuestionSetEditor from './pages/admin/templates/QuestionSetEditor.jsx'
 import HelpPage from './pages/admin/HelpPage.jsx'
 import TeacherRequestCard from './components/TeacherRequestCard.jsx'
+import { Logo } from './components/brand/Logo.jsx'
 
 // ─── Auth Context (physlab의 App.jsx와 동일한 패턴 — 같은 Firebase 프로젝트를 쓰므로 users/{uid}.role도 그대로 통한다) ──
 export const AuthContext = createContext(null)
@@ -93,7 +94,7 @@ function AuthProvider({ children }) {
 
 function LoadingSpinner() {
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-50">
+    <div className="flex items-center justify-center min-h-screen bg-canvas">
       <div className="w-12 h-12 border-4 border-indigo-600 border-t-transparent rounded-full animate-spin" />
     </div>
   )
@@ -165,15 +166,16 @@ function StudentHome() {
   // 선생님이 처음 로그인하면 가장 먼저 해야 할 일이 교사 권한 요청이라 크게 보여주고,
   // 학생용 안내("과제 링크로 접속")는 그 아래에 작게 둔다.
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gradient-to-br from-indigo-50 via-white to-violet-50 px-4 py-10">
+    <div className="flex items-center justify-center min-h-screen bg-canvas px-4 py-10">
       <div className="w-full max-w-md space-y-4">
+        <div className="mb-2 flex justify-center"><Logo size={44} /></div>
         <TeacherRequestCard
           state={requested ? 'requested' : requesting ? 'requesting' : 'idle'}
           error={error}
           onRequest={handleRequest}
         />
-        <div className="rounded-2xl border border-gray-200 bg-white px-5 py-4 text-center">
-          <p className="text-sm font-medium text-gray-700">✍️ 학생인가요?</p>
+        <div className="rounded-2xl bg-white px-5 py-4 text-center shadow-sm ring-1 ring-slate-200">
+          <p className="text-sm font-medium text-gray-700">🧑‍🎓 학생인가요?</p>
           <p className="mt-0.5 text-xs text-gray-400">선생님이 공유한 과제 링크로 접속하면 바로 작성 화면이 열립니다.</p>
         </div>
         <p className="text-center">
@@ -188,8 +190,9 @@ function StudentHome() {
 function PendingApproval() {
   const { user, userInfo } = useAuth()
   return (
-    <div className="flex items-center justify-center min-h-screen bg-gray-50 px-4">
+    <div className="flex items-center justify-center min-h-screen bg-canvas px-4">
       <div className="text-center max-w-sm">
+        <div className="mb-6 flex justify-center"><Logo size={44} /></div>
         <p className="text-4xl mb-3">⏳</p>
         <p className="text-gray-700 font-medium mb-1">교사 권한 승인 대기 중입니다</p>
         <p className="text-gray-400 text-sm">

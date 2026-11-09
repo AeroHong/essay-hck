@@ -8,6 +8,7 @@ import SketchCanvas, { PromptInk } from '../../components/sketch/SketchCanvas.js
 import { PROMPT_BOX_CLASS, GROUP_BOX_CLASS } from '../../components/sketch/promptBoxes.js'
 import { sectionHasAnswer } from '../../utils/sketch.js'
 import { groupMap } from '../../utils/questionTree.js'
+import { inkDelta } from '../../utils/inkLog.js'
 
 function scrollToSection(id) {
   document.getElementById(`section-${id}`)?.scrollIntoView({ behavior: 'smooth', block: 'start' })
@@ -19,7 +20,7 @@ function scrollToSection(id) {
  * 놓치지 않고 다 채우게 하는 것). 입력 위젯 자체는 자유서술과 같은 EssayEditor를 섹션마다
  * 하나씩 재사용한다 — 붙여넣기/타이핑 로깅도 그대로 따라오고, sectionId만 얹어 보낸다.
  */
-export default function StructuredReportEditor({ template, sections, onChange, disabled, logInput, logKeydown, logPaste, scores, experimentResult }) {
+export default function StructuredReportEditor({ template, sections, onChange, disabled, logInput, logKeydown, logPaste, logInk, scores, experimentResult }) {
   // 최신 섹션 묶음을 ref로 읽는다 — 이미지 업로드처럼 await 뒤에 도착하는 onChange는 예전
   // 렌더의 sections를 붙잡고 있어서, 그대로 펼치면 그사이 다른 문항에 쓴 내용이 옛 값으로
   // 되돌아간 채 자동저장됐다("쓰다가 날아갔어요"). 같은 틱에 두 번 바뀌어도 앞의 변경이
@@ -35,6 +36,15 @@ export default function StructuredReportEditor({ template, sections, onChange, d
     const next = { ...latest, [id]: { ...current, ...patch } }
     sectionsRef.current = next
     onChange(next)
+  }
+
+  // 필기 층(그림 답안 ink, 문항 위 promptInk·groupInk)이 바뀌면 바뀐 획만 작성 과정 로그에 남긴다
+  // (utils/inkLog.js) — 교사의 '작성 과정 재생'에서 글과 함께 필기도 다시 그려진다.
+  function updateInk(id, field, layer, value) {
+    const prevVal = (sectionsRef.current || {})[id]?.[field]
+    const d = inkDelta(layer === 'ink' ? prevVal : prevVal?.items, layer === 'ink' ? value : value?.items)
+    if (d) logInk?.({ sectionId: id, layer, ...d, ...(value?.w ? { w: value.w } : {}) })
+    updateSection(id, { [field]: value })
   }
 
   let lastGroup = null
@@ -59,7 +69,7 @@ export default function StructuredReportEditor({ template, sections, onChange, d
       )}
 
       {/* 진행 상황 칩 — 초록(작성됨)/회색(미작성), 클릭하면 그 섹션으로 스크롤 */}
-      <div className="flex flex-wrap gap-1.5 mb-5 sticky top-0 bg-gray-50 py-2 z-10 -mx-1 px-1">
+      <div className="flex flex-wrap gap-1.5 mb-5 sticky top-0 bg-canvas py-2 z-10 -mx-1 px-1">
         {template.sections.map(sec => {
           const filled = sec.type === 'experiment'
             ? Boolean(experimentResult)
@@ -99,7 +109,7 @@ export default function StructuredReportEditor({ template, sections, onChange, d
                       <PromptInk
                         ink={answer.groupInk}
                         readOnly={disabled}
-                        onChange={groupInk => updateSection(sec.id, { groupInk })}
+                        onChange={groupInk => updateInk(sec.id, 'groupInk', 'group', groupInk)}
                       >
                         <div
                           className={GROUP_BOX_CLASS}
@@ -132,7 +142,7 @@ export default function StructuredReportEditor({ template, sections, onChange, d
                     <PromptInk
                       ink={answer.promptInk}
                       readOnly={disabled}
-                      onChange={promptInk => updateSection(sec.id, { promptInk })}
+                      onChange={promptInk => updateInk(sec.id, 'promptInk', 'prompt', promptInk)}
                     >
                       <div
                         className={PROMPT_BOX_CLASS}
@@ -148,7 +158,7 @@ export default function StructuredReportEditor({ template, sections, onChange, d
                       image={sec.drawImage}
                       value={answer.ink}
                       readOnly={disabled}
-                      onChange={ink => updateSection(sec.id, { ink })}
+                      onChange={ink => updateInk(sec.id, 'ink', 'ink', ink)}
                     />
                   </div>
                 )}

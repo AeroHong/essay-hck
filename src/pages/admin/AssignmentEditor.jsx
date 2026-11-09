@@ -6,6 +6,7 @@ import { listTemplates, getTemplateKind, TEMPLATE_KIND_QUESTION_SET } from '../.
 import { hasClassroomConfig, signInToClassroom, listMyCourses, createCourseWork, getClassroomErrorMessage } from '../../services/classroom.js'
 import { nowForDatetimeLocal } from '../../utils/datetimeLocal.js'
 import { EXPERIMENT_MODES } from '../../services/experiments.js'
+import AppHeader from '../../components/brand/AppHeader.jsx'
 
 /** <input type="datetime-local">의 min 속성용 — 지금 이 순간을 로컬 시간대 "YYYY-MM-DDTHH:mm"로. */
 export default function AssignmentEditor() {
@@ -262,12 +263,12 @@ export default function AssignmentEditor() {
   const labelClass = 'block text-xs font-bold text-gray-600 mb-1.5'
 
   if (loading) {
-    return <div className="flex min-h-screen items-center justify-center bg-gray-50"><div className="h-10 w-10 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent" /></div>
+    return <div className="flex min-h-screen items-center justify-center bg-canvas"><div className="h-10 w-10 animate-spin rounded-full border-4 border-indigo-600 border-t-transparent" /></div>
   }
 
   if (accessDenied) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-gray-50 px-4">
+      <div className="flex min-h-screen items-center justify-center bg-canvas px-4">
         <div className="text-center">
           <p className="text-gray-500 mb-4">{isCopy ? '다른 교사가 만든 배정이라 복제할 수 없습니다.' : '다른 교사가 만든 배정이라 수정할 수 없습니다.'}</p>
           <button onClick={() => navigate('/admin')} className="text-indigo-600 text-sm underline">돌아가기</button>
@@ -277,15 +278,8 @@ export default function AssignmentEditor() {
   }
 
   return (
-    <div className="min-h-screen bg-gray-50 flex flex-col">
-      <header className="bg-white border-b border-gray-200 px-4 py-3 flex items-center gap-3 shadow-sm sticky top-0 z-10">
-        <button onClick={() => navigate('/admin')} className="text-gray-400 hover:text-gray-600 transition-colors">
-          <svg className="w-5 h-5" fill="none" viewBox="0 0 24 24" stroke="currentColor">
-            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M15 19l-7-7 7-7" />
-          </svg>
-        </button>
-        <h1 className="text-base font-bold text-gray-900">{isEdit ? '배정 수정' : isCopy ? '배정 복제' : '새 배정 만들기'}</h1>
-      </header>
+    <div className="min-h-screen bg-canvas flex flex-col">
+      <AppHeader title={isEdit ? '배정 수정' : isCopy ? '배정 복제' : '새 배정 만들기'} onBack={() => navigate('/admin')} />
 
       <main className="flex-1 p-5 max-w-xl mx-auto w-full space-y-5">
         <div>
