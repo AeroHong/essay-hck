@@ -12,7 +12,9 @@ const TYPING_UPDATE_THROTTLE_MS = 6000
  * 환경(rtdb === null, VITE_FIREBASE_DATABASE_URL 미설정)에서는 아무 것도 하지 않는다 —
  * essay-platform의 나머지 기능(작성/제출/로깅)엔 영향이 없다.
  *
- * 기록 경로: presence/{assignmentId}/{uid} = { state, lastActive }
+ * 기록 경로: presence/{assignmentId}/{uid} = { state, lastActive, name?, email? }
+ *   name·email: 대기실 단계엔 제출물 문서가 없어서, 교사 대시보드가 대기실 학생 목록을 보여주려면
+ *   presence에 이름·이메일이 함께 있어야 한다(교사는 학생 users 문서를 읽을 수 없음).
  *   state: 'viewing'(보는 중) | 'typing'(입력 중) | 'away'(다른 탭/창으로 전환) | 'offline'(연결 끊김, onDisconnect가 자동 기록)
  *
  * @param {{assignmentId: string, uid: string, enabled: boolean}} params enabled=false가 되면
@@ -20,10 +22,17 @@ const TYPING_UPDATE_THROTTLE_MS = 6000
  * @returns {{updateTyping: () => void}} 에디터 입력 이벤트(useEssayLogger의 logInput/logKeydown
  *   호출 지점)에서 불러주면 'typing' 상태로 갱신하고, 입력이 멈추면 자동으로 'viewing'으로 되돌린다.
  */
-export function usePresence({ assignmentId, uid, enabled }) {
+export function usePresence({ assignmentId, uid, enabled, name = '', email = '' }) {
   const lastTypingUpdateRef = useRef(0)
   const typingRevertTimerRef = useRef(null)
   const presenceRefRef = useRef(null)
+  // 상태를 쓸 때마다 같이 붙이는 신원 정보 — 매번 최신 값을 읽도록 ref로 둔다
+  const identityRef = useRef({})
+  identityRef.current = {
+    ...(name ? { name: String(name).slice(0, 100) } : {}),
+    ...(email ? { email: String(email).toLowerCase().slice(0, 200) } : {}),
+  }
+  const payload = (state) => ({ state, lastActive: serverTimestamp(), ...identityRef.current })
 
   useEffect(() => {
     if (!rtdb || !enabled || !assignmentId || !uid) return
@@ -31,14 +40,14 @@ export function usePresence({ assignmentId, uid, enabled }) {
     const presenceRef = ref(rtdb, `presence/${assignmentId}/${uid}`)
     presenceRefRef.current = presenceRef
 
-    const setState = (state) => set(presenceRef, { state, lastActive: serverTimestamp() }).catch(() => {})
+    const setState = (state) => set(presenceRef, payload(state)).catch(() => {})
 
     // .info/connected는 RTDB가 내장 제공하는 특수 경로로, 연결 상태가 바뀔 때마다 값이
     // true/false로 갱신된다. 연결될 때마다(재연결 포함) onDisconnect를 다시 등록해야
     // 한다 — 이전 연결의 onDisconnect 등록은 그 연결이 끊기는 순간 서버에서 소모되기 때문.
     const unsubscribeConnected = onValue(ref(rtdb, '.info/connected'), (snap) => {
       if (snap.val() !== true) return
-      onDisconnect(presenceRef).set({ state: 'offline', lastActive: serverTimestamp() })
+      onDisconnect(presenceRef).set(payload('offline'))
       setState(document.visibilityState === 'hidden' ? 'away' : 'viewing')
     })
 
@@ -71,16 +80,13 @@ export function usePresence({ assignmentId, uid, enabled }) {
     const now = Date.now()
     if (now - lastTypingUpdateRef.current >= TYPING_UPDATE_THROTTLE_MS) {
       lastTypingUpdateRef.current = now
-      set(presenceRef, { state: 'typing', lastActive: serverTimestamp() }).catch(() => {})
+      set(presenceRef, payload('typing')).catch(() => {})
     }
     if (typingRevertTimerRef.current) clearTimeout(typingRevertTimerRef.current)
     typingRevertTimerRef.current = setTimeout(() => {
       typingRevertTimerRef.current = null
       if (presenceRefRef.current) {
-        set(presenceRefRef.current, {
-          state: document.visibilityState === 'hidden' ? 'away' : 'viewing',
-          lastActive: serverTimestamp()
-        }).catch(() => {})
+        set(presenceRefRef.current, payload(document.visibilityState === 'hidden' ? 'away' : 'viewing')).catch(() => {})
       }
     }, TYPING_TIMEOUT_MS)
   }, [])

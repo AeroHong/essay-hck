@@ -12,6 +12,12 @@
           "lastActive": {
             ".validate": "newData.val() === now"
           },
+          "name": {
+            ".validate": "newData.isString() && newData.val().length <= 100"
+          },
+          "email": {
+            ".validate": "newData.isString() && newData.val().length <= 200"
+          },
           "$other": {
             ".validate": false
           }

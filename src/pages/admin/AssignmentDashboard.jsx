@@ -629,6 +629,24 @@ export default function AssignmentDashboard() {
   // 반 필터를 골랐으면 상단 "제출 X/Y" 통계도 그 반 기준으로 보여준다.
   // 대기실 단계엔 아직 제출물 문서가 없으므로(평가 시작 후에 만든다) 접속 인원은 presence로 센다.
   const waitingCount = Object.values(presenceMap).filter(p => p?.state && p.state !== 'offline').length
+
+  // 대기실 학생 목록 — Classroom에 연결된 대기실 배정에서, 평가 시작 전(제출물이 아직 없는 단계)에만.
+  // presence에 학생이 남긴 이름·이메일(usePresence)을 쓰고, 명단을 불러왔으면 아직 안 들어온 학생도 보여준다.
+  const showWaitingList = classrooms.length > 0 && !!assignment?.waitingRoomEnabled &&
+    assignment?.status !== 'closed' && !assignment?.examStartedAt
+  const waitingEntries = Object.entries(presenceMap)
+    .map(([uid, p]) => ({ uid, state: p?.state, name: p?.name || '', email: (p?.email || '').toLowerCase() }))
+    .filter(e => e.state)
+  const enteredEmails = new Set(waitingEntries.filter(e => e.state !== 'offline' && e.email).map(e => e.email))
+  const waitingSorted = [...waitingEntries].sort((a, b) =>
+    (a.state === 'offline') - (b.state === 'offline') ||
+    (roster?.[a.email]?.name || a.name || a.email).localeCompare(roster?.[b.email]?.name || b.name || b.email, 'ko'))
+  const notEnteredYet = roster
+    ? Object.entries(roster)
+      .filter(([email]) => !enteredEmails.has(email))
+      .map(([email, info]) => ({ email, ...info }))
+      .sort((a, b) => (a.name || '').localeCompare(b.name || '', 'ko'))
+    : []
   const submittedCount = filteredSubmissions.filter(s => s.status === 'submitted').length
   const experimentDoneCount = filteredSubmissions.filter(s => experimentResults[s.studentUid]).length
   const lateCount = filteredSubmissions.filter(s => isLateSubmission(s, assignment)).length
@@ -1066,14 +1084,52 @@ export default function AssignmentDashboard() {
             ))}
           </div>
         )}
+        {showWaitingList && !loading && (
+          <section className="mb-4 rounded-2xl border border-amber-200 bg-white p-5">
+            <div className="mb-3 flex flex-wrap items-baseline gap-2">
+              <h2 className="text-sm font-bold text-gray-800">⏳ 대기실</h2>
+              <span className="text-sm text-amber-700">접속 {waitingCount}명{roster ? ` / 명단 ${Object.keys(roster).length}명` : ''}</span>
+              {presenceError && <span className="text-xs font-medium text-red-600">접속 현황을 불러오지 못했습니다({presenceError})</span>}
+              {!roster && <span className="text-xs text-gray-400">위 Classroom 카드의 '명단 불러오기'를 누르면 아직 안 들어온 학생도 보여요.</span>}
+            </div>
+            {waitingSorted.length === 0 ? (
+              <p className="text-sm text-gray-400">아직 대기실에 들어온 학생이 없습니다.</p>
+            ) : (
+              <ul className="flex flex-wrap gap-2">
+                {waitingSorted.map(e => {
+                  const rosterName = roster?.[e.email]?.name
+                  const unknown = roster && e.email && !roster[e.email]
+                  return (
+                    <li key={e.uid} className={`flex items-center gap-2 rounded-xl border px-3 py-1.5 text-sm ${e.state === 'offline' ? 'border-gray-200 bg-gray-50 text-gray-400' : 'border-gray-200 bg-white text-gray-800'}`}>
+                      <span className="font-medium">{rosterName || e.name || '(이름 없음)'}</span>
+                      {unknown && <span className="text-xs text-orange-600" title={e.email}>명단에 없음</span>}
+                      <PresenceBadge state={e.state} />
+                    </li>
+                  )
+                })}
+              </ul>
+            )}
+            {roster && notEnteredYet.length > 0 && (
+              <div className="mt-4 border-t border-gray-100 pt-3">
+                <p className="mb-2 text-xs font-bold text-orange-700">아직 안 들어온 학생 {notEnteredYet.length}명</p>
+                <p className="text-sm leading-relaxed text-gray-600">
+                  {notEnteredYet.map(a => a.name || a.email).join(', ')}
+                </p>
+              </div>
+            )}
+            <p className="mt-3 text-xs text-gray-400">이 목록 기능 이전 화면으로 들어와 있는 학생은 이름 없이 보일 수 있어요(새로고침하면 이름이 나옵니다).</p>
+          </section>
+        )}
         {loading ? (
           <div className="flex justify-center py-16">
             <div className="w-8 h-8 border-2 border-indigo-500 border-t-transparent rounded-full animate-spin" />
           </div>
         ) : submissions.length === 0 && absentStudents.length === 0 ? (
-          <div className="text-center py-16 text-gray-400 bg-white rounded-2xl border border-gray-200">
-            아직 시작한 학생이 없습니다.
-          </div>
+          showWaitingList ? null : (
+            <div className="text-center py-16 text-gray-400 bg-white rounded-2xl border border-gray-200">
+              아직 시작한 학생이 없습니다.
+            </div>
+          )
         ) : filteredSubmissions.length === 0 && filteredAbsent.length === 0 ? (
           <div className="text-center py-16 text-gray-400 bg-white rounded-2xl border border-gray-200">
             이 조건에 해당하는 학생이 없습니다.

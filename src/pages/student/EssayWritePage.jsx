@@ -318,7 +318,11 @@ export default function EssayWritePage() {
   }, { delay: 700 })
 
   const { logInput, logKeydown, logInk, logPaste, flushNow: flushLogs } = useEssayLogger(submission?.id)
-  const { updateTyping } = usePresence({ assignmentId, uid: user?.uid, enabled: !locked && !makeupBlocked })
+  // 이름·이메일을 함께 남겨야 교사 대시보드가 대기실(제출물이 아직 없는 단계) 학생 목록을 보여줄 수 있다
+  const { updateTyping } = usePresence({
+    assignmentId, uid: user?.uid, enabled: !locked && !makeupBlocked,
+    name: userInfo?.name || user?.displayName || '', email: user?.email || ''
+  })
 
   // 작성 로그(리플레이용)와 presence("입력 중" 표시)는 같은 입력 이벤트에서 함께 갱신한다 —
   // 로깅 자체는 useEssayLogger가, 실시간 "입력 중" 표시는 usePresence가 각자 책임진다.
