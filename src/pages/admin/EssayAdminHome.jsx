@@ -131,7 +131,7 @@ export default function EssayAdminHome() {
                       }`}>
                         {STATUS_LABEL[a.status] || a.status}
                       </span>
-                      <h3 className="min-w-0 flex-1 truncate font-bold text-slate-900">{a.title || '(제목 없음)'}</h3>
+                      <h3 className="min-w-0 flex-1 break-words break-keep font-bold leading-snug text-slate-900">{a.title || '(제목 없음)'}</h3>
                     </div>
                     <p className="mt-2 text-sm text-slate-500">{a.dueAt ? `마감 ${formatDate(a.dueAt)}` : "마감일 없음"}</p>
                     {classrooms.length > 0 && (
@@ -139,7 +139,9 @@ export default function EssayAdminHome() {
                         🎓 {classrooms.map(c => c.courseName).filter(Boolean).join(', ')}
                       </p>
                     )}
-                    <div className="mt-4 flex items-center gap-1.5 border-t border-slate-100 pt-3">
+                    {/* 제목 줄 수가 카드마다 달라도 아래 줄은 카드 바닥에 맞춘다 */}
+                    <div className="min-h-4 flex-1" />
+                    <div className="flex items-center gap-1.5 border-t border-slate-100 pt-3">
                       <span className="text-sm font-semibold text-brand">대시보드 →</span>
                       <button
                         onClick={(e) => { e.stopPropagation(); navigate(`/admin/assignments/new?from=${a.id}`) }}
