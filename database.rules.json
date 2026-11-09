@@ -2,8 +2,8 @@
   "rules": {
     "presence": {
       "$assignmentId": {
+        ".read": "auth != null",
         "$studentUid": {
-          ".read": "auth != null",
           ".write": "auth != null && auth.uid === $studentUid",
           ".validate": "newData.hasChildren(['state', 'lastActive'])",
           "state": {

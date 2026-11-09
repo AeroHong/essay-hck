@@ -166,6 +166,25 @@ function canMergeSelection(grid, sel) {
  * 것만 막기 위해 텍스트는 평문으로 정규화해서 삽입한다(이미지 파일이 붙여넣어지면 업로드해서
  * 끼워 넣는다 — 스크린샷 붙여넣기 대응).
  */
+/**
+ * 손잡이를 끄는 동안 창 전체의 포인터 이동을 따라가고, 끝나면 정리한다. 손을 뗀 경우(pointerup)뿐
+ * 아니라 브라우저가 포인터를 가져간 경우(pointercancel — 태블릿 펜·손가락에서 흔함)와 창을 벗어난
+ * 경우(blur)에도 끝내야 한다. 예전엔 pointerup만 기다려서 리스너·상태가 남는 경우가 있었다.
+ */
+function trackPointerDrag(onMove, onEnd) {
+  const END = ['pointerup', 'pointercancel', 'blur']
+  let done = false
+  function end(ev) {
+    if (done) return
+    done = true
+    window.removeEventListener('pointermove', onMove)
+    END.forEach(t => window.removeEventListener(t, end))
+    onEnd(ev)
+  }
+  window.addEventListener('pointermove', onMove)
+  END.forEach(t => window.addEventListener(t, end))
+}
+
 export default function EssayEditor({
   value,
   onChange,
@@ -802,12 +821,9 @@ export default function EssayEditor({
       setActiveTable({ el: table, rect: table.getBoundingClientRect() })
     }
     function onUp() {
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', onUp)
       commit('resizeTable')
     }
-    window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', onUp)
+    trackPointerDrag(onMove, onUp)
   }
 
   /** 두 열 사이의 경계 손잡이 — 표 전체 너비는 그대로 두고 양옆 두 열 사이에서만 너비를 주고받는다. */
@@ -832,12 +848,9 @@ export default function EssayEditor({
       setActiveTable({ el: table, rect: table.getBoundingClientRect() })
     }
     function onUp() {
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', onUp)
       commit('resizeTableColumn')
     }
-    window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', onUp)
+    trackPointerDrag(onMove, onUp)
   }
 
   /** 행 아래쪽 경계 손잡이 — 그 행의 높이만 바꾼다(다른 행과는 독립적). */
@@ -857,12 +870,9 @@ export default function EssayEditor({
       setActiveTable({ el: table, rect: table.getBoundingClientRect() })
     }
     function onUp() {
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', onUp)
       commit('resizeTableRow')
     }
-    window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', onUp)
+    trackPointerDrag(onMove, onUp)
   }
 
   /** Tab으로 표 셀 사이를 이동한다 — 마지막 셀에서 Tab을 누르면 새 행을 만들어 이어준다. */
@@ -991,14 +1001,18 @@ export default function EssayEditor({
         c2: Math.max(start.col, cur.col)
       })
     }
+    // 태블릿에서 펜·손가락으로 끌다가 브라우저가 스크롤로 가져가면 mouseup이 오지 않는다 — 그러면
+    // body의 userSelect:none이 남아 답안 칸에 캐럿이 안 들어가 '입력이 전부 멈춘' 것처럼 됐다(현장 신고).
+    // 어떤 식으로 끝나든(mouseup·pointerup·pointercancel·touchend·창 이탈) 반드시 풀리게 한다.
+    const END_EVENTS = ['mouseup', 'pointerup', 'pointercancel', 'touchend', 'touchcancel', 'blur']
     function onUp() {
       window.removeEventListener('mousemove', onMove)
-      window.removeEventListener('mouseup', onUp)
+      END_EVENTS.forEach(t => window.removeEventListener(t, onUp))
       document.body.style.userSelect = ''
       if (!dragging) setCellSelection(null)
     }
     window.addEventListener('mousemove', onMove)
-    window.addEventListener('mouseup', onUp)
+    END_EVENTS.forEach(t => window.addEventListener(t, onUp))
   }
 
   function handleEditorMouseLeave() {
@@ -1065,8 +1079,6 @@ export default function EssayEditor({
       setBlockDrag({ insertBeforeEl, indicatorTop })
     }
     function onUp() {
-      window.removeEventListener('pointermove', onMove)
-      window.removeEventListener('pointerup', onUp)
       if (moved) {
         setBlockDrag(prev => {
           if (prev) {
@@ -1082,8 +1094,7 @@ export default function EssayEditor({
         el.focus()
       }
     }
-    window.addEventListener('pointermove', onMove)
-    window.addEventListener('pointerup', onUp)
+    trackPointerDrag(onMove, onUp)
   }
 
   const plainText = htmlToPlainText(value)

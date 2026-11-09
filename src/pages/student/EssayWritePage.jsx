@@ -345,6 +345,16 @@ export default function EssayWritePage() {
     if (paused) flushNow()
   }, [paused, flushNow])
 
+  // 화면이 먹통이 됐을 때 전체화면(키보드 없음)에서도 누를 수 있는 새로고침 — 답안·로그를 먼저
+  // 저장하고 다시 불러온다(현장 신고: 일부 기기에서 입력이 멈추고 새로고침하면 풀리는데 새로고침할 방법이 없었다).
+  const [reloading, setReloading] = useState(false)
+  async function handleSafeReload() {
+    if (reloading) return
+    setReloading(true)
+    try { await Promise.race([Promise.all([flushNow(), flushLogs()]), new Promise(r => setTimeout(r, 4000))]) } catch { /* 저장 실패해도 새로고침은 한다 — 자동저장 캐시가 남아 있다 */ }
+    window.location.reload()
+  }
+
   function handleLogInput(entry) {
     logInput(entry)
     updateTyping()
@@ -582,6 +592,16 @@ export default function EssayWritePage() {
             <ExamTimer deadlineMs={deadlineMs} serverOffsetMs={serverOffsetMs} onExpire={handleTimeExpired} pausedAtMs={pausedAtMs} />
           )}
           {!locked && !showWaitingRoom && <SaveStateLabel state={saveState} />}
+          <button
+            type="button"
+            onClick={handleSafeReload}
+            disabled={reloading}
+            title="화면이 멈추거나 입력이 안 되면 누르세요 — 쓴 내용을 저장한 뒤 새로고침합니다"
+            className="flex h-9 shrink-0 items-center gap-1 rounded-xl border border-slate-200 px-2.5 text-sm font-medium text-slate-600 transition-colors hover:bg-slate-100 disabled:opacity-50"
+          >
+            <span className={reloading ? 'animate-spin' : ''}>↻</span>
+            <span className="hidden sm:inline">{reloading ? '저장 후 새로고침…' : '새로고침'}</span>
+          </button>
           {timeUp && submission?.status !== 'submitted' && (
             <span className="text-xs bg-red-100 text-red-700 rounded-full px-3 py-1 font-medium">시간 종료 · 제출 중...</span>
           )}

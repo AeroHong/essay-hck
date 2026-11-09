@@ -328,6 +328,9 @@ export default function SketchCanvas({ image, children, contentWidth, value, onC
     onPointerMove: move,
     onPointerUp: up,
     onPointerCancel: up,
+    // 손을 떼기 전에 브라우저가 포인터 추적을 놓친 경우 — 그대로 두면 '그리는 중'(draft)이 남아
+    // 그 칸에서 펜이 다시 안 먹혔다. 손을 뗀 것처럼 마무리한다(이미 끝난 획이면 up이 무시한다).
+    onLostPointerCapture: up,
     onContextMenu: (e) => e.preventDefault(),
   }
 

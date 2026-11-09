@@ -89,6 +89,8 @@ export default function AssignmentDashboard() {
   const [template, setTemplate] = useState(null)
   const [submissions, setSubmissions] = useState([])
   const [presenceMap, setPresenceMap] = useState({})
+  // presence 구독 실패(규칙 거부 등) — 예전엔 조용히 0명으로 보여 '대기실에 아무도 없다'로 오해했다
+  const [presenceError, setPresenceError] = useState('')
   const [loading, setLoading] = useState(true)
   const [accessDenied, setAccessDenied] = useState(false)
   const [copied, setCopied] = useState(false)
@@ -156,8 +158,13 @@ export default function AssignmentDashboard() {
   // 환경(rtdb === null)에서는 구독하지 않고, 표는 항상 "—"(판정 불가)만 보여준다.
   useEffect(() => {
     if (!rtdb || !assignmentId) return
+    setPresenceError('')
     const unsub = onValue(ref(rtdb, `presence/${assignmentId}`), (snap) => {
+      setPresenceError('')
       setPresenceMap(snap.val() || {})
+    }, (err) => {
+      console.error('접속 현황 구독 실패:', err)
+      setPresenceError(err?.code === 'PERMISSION_DENIED' || /permission/i.test(err?.message || '') ? '권한 없음' : '연결 실패')
     })
     return () => unsub()
   }, [assignmentId])
@@ -725,7 +732,13 @@ export default function AssignmentDashboard() {
               </>
             ) : (
               <>
-                <span className="text-xs text-amber-700">대기실 접속 {waitingCount}명</span>
+                {presenceError ? (
+                  <span className="text-xs font-medium text-red-600" title="접속 현황(Realtime Database)을 불러오지 못했습니다. 새로고침해 보고, 계속되면 관리자에게 알려 주세요.">
+                    대기실 접속 확인 불가({presenceError})
+                  </span>
+                ) : (
+                  <span className="text-xs text-amber-700">대기실 접속 {waitingCount}명</span>
+                )}
                 <button
                   onClick={handleStartExam}
                   disabled={startingExam}
