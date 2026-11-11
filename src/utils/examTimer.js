@@ -23,6 +23,13 @@ export function toMillis(ts) {
 export function getExamDeadlineMs(assignment, submission, fallbackStartMs = null) {
   const minutes = Number(assignment?.timeLimitMinutes)
   if (!minutes || minutes <= 0) return null
+  // 교사가 이 학생만 시간을 새로 준 경우(결석 후 재응시 — services/essay.js restartSubmissionTimer):
+  // 그 시각부터 제한시간을 잰다. 원래 회차의 시작 시각·일시정지 누적과는 무관하다.
+  // (교사 화면에선 방금 쓴 serverTimestamp()가 잠깐 null로 보인다 — 그동안은 표시하지 않는다.)
+  if (submission && submission.timerRestartedAt !== undefined) {
+    const restartMs = toMillis(submission.timerRestartedAt)
+    return restartMs == null ? null : restartMs + minutes * 60 * 1000
+  }
   const startMs = assignment.waitingRoomEnabled
     ? toMillis(assignment.examStartedAt)
     : (toMillis(submission?.startedAt) ?? fallbackStartMs)

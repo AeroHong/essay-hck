@@ -492,6 +492,37 @@ export async function reopenSubmission(subId) {
   })
 }
 
+/**
+ * 이 학생만 제한시간을 처음부터 다시 준다(결석생 재응시 등 — 교사 전용). 지금 시각부터
+ * 제한시간이 새로 흐르고(utils/examTimer.js의 timerRestartedAt), 제출돼 있으면 다시 연다.
+ * 쓰던 답안·작성 기록은 그대로 두고, 재열기와 달리 제한시간은 계속 적용된다.
+ * 배정이 마감됐거나 추가 응시 대상 제한(makeupEmails)이 걸려 있으면 이 학생이 들어올 수 있게
+ * 대상 목록에 넣는다 — 마감된 배정은 이 학생만 들어오도록 열린다(EssayWritePage의 makeupBlocked).
+ * @param {object} sub 제출물(id, studentEmail)
+ * @param {object} assignment 현재 배정(id 포함)
+ */
+export async function restartSubmissionTimer(sub, assignment) {
+  const email = (sub.studentEmail || '').toLowerCase()
+  const makeupActive = Array.isArray(assignment.makeupEmails) && assignment.makeupEmails.length > 0
+  if (assignment.status === 'closed') {
+    await updateAssignment(assignment.id, {
+      status: 'open',
+      makeupEmails: makeupActive ? arrayUnion(email) : [email]
+    })
+  } else if (makeupActive && !assignment.makeupEmails.includes(email)) {
+    await updateAssignment(assignment.id, { makeupEmails: arrayUnion(email) })
+  }
+  await updateDoc(doc(db, 'essaySubmissions', sub.id), {
+    status: 'draft',
+    timerRestartedAt: serverTimestamp(),
+    timeLimitWaived: false,
+    forceSubmitted: false,
+    autoSubmitted: false,
+    submittedAt: null,
+    updatedAt: serverTimestamp()
+  })
+}
+
 // ─── 채점 ('essay_calculator'만 사용) ───────────────────────────
 //
 // 학생은 자기 제출물 문서를 읽을 권한이 이미 있어서(firestore.rules) sections.*.score 필드

@@ -2,7 +2,7 @@ import React, { useEffect, useState } from 'react'
 import { useNavigate, useParams } from 'react-router-dom'
 import { ref, onValue } from 'firebase/database'
 import { useAuth } from '../../App.jsx'
-import { getAssignment, getPassage, subscribeSubmissions, reopenSubmission, updateAssignment, releaseScores, getAssignmentClassrooms, startExam, pauseExam, resumeExam, openMakeupExam, clearMakeupExam, linkSubmissionToRoster, forceSubmitSubmission, saveTeacherMemo, subscribeTeacherMemos } from '../../services/essay.js'
+import { getAssignment, getPassage, subscribeSubmissions, reopenSubmission, restartSubmissionTimer, updateAssignment, releaseScores, getAssignmentClassrooms, startExam, pauseExam, resumeExam, openMakeupExam, clearMakeupExam, linkSubmissionToRoster, forceSubmitSubmission, saveTeacherMemo, subscribeTeacherMemos } from '../../services/essay.js'
 import { releaseFeedbackForAssignment } from '../../services/feedback.js'
 import { getTemplate } from '../../services/reportTemplates.js'
 import { rtdb } from '../../firebase.js'
@@ -230,6 +230,18 @@ export default function AssignmentDashboard() {
   async function handleReopen(sub) {
     if (!window.confirm(`${sub.studentName} 학생의 제출을 다시 열까요? 학생이 재수정할 수 있게 됩니다.`)) return
     await reopenSubmission(sub.id)
+  }
+
+  // 결석 등으로 시간이 이미 끝난 학생에게 제한시간을 처음부터 다시 준다(그 학생만).
+  async function handleRestartTimer(sub) {
+    const minutes = assignment?.timeLimitMinutes
+    if (!window.confirm(`${sub.studentName} 학생에게 지금부터 제한시간 ${minutes}분을 새로 줄까요?\n제출돼 있으면 다시 열리고, 쓰던 답안은 그대로 남습니다. 학생이 바로 접속해야 합니다.${assignment.status === 'closed' ? '\n(마감된 평가라 이 학생만 들어올 수 있게 다시 열립니다.)' : ''}`)) return
+    try {
+      await restartSubmissionTimer(sub, assignment)
+    } catch (err) {
+      console.error('시간 재시작 실패:', err)
+      alert('시간 재시작 중 오류가 발생했습니다.')
+    }
   }
 
   // "서술형 평가-문항"(essay_calculator) 전용 — 학생별로 하나씩 공개하는 것(ReplayView.jsx의
@@ -1301,6 +1313,15 @@ export default function AssignmentDashboard() {
                               className="rounded border border-red-200 px-1.5 py-0.5 text-xs text-red-500 hover:bg-red-50"
                             >
                               강제 제출
+                            </button>
+                          )}
+                          {assignment.timeLimitMinutes > 0 && (
+                            <button
+                              onClick={(e) => { e.stopPropagation(); handleRestartTimer(sub) }}
+                              className="text-xs text-gray-400 hover:text-indigo-600"
+                              title="이 학생만 지금부터 제한시간을 새로 줍니다(결석생 재응시)"
+                            >
+                              시간 재시작
                             </button>
                           )}
                         </div>
