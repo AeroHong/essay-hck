@@ -18,7 +18,7 @@ import { isFocusGuardActive, formatDuration } from '../../utils/focusGuard.js'
 import ExperimentReport from '../../components/experiment/ExperimentReport.jsx'
 import { subscribeExperimentResults, formatFitValue } from '../../services/experiments.js'
 import { sectionHasAnswer } from '../../utils/sketch.js'
-import { hasClassroomConfig, signInToClassroom, listMyCourses, createCourseWork, updateCourseWorkDescription, courseWorkExists, getClassroomErrorMessage, getCourseStudentCount, listCourseStudents, isClassroomConnected } from '../../services/classroom.js'
+import { hasClassroomConfig, signInToClassroom, listMyCourses, createCourseWork, updateCourseWorkDescription, courseWorkExists, getClassroomErrorMessage, getCourseStudentCount, listCourseStudents, isClassroomConnected, hasEmailScope } from '../../services/classroom.js'
 import AppHeader from '../../components/brand/AppHeader.jsx'
 
 /** handlePublishToClassroom과 반드시 같은 문구를 써야 한다 — "설명 동기화" 버튼이
@@ -52,7 +52,10 @@ function rosterCacheKey(assignmentId) {
 function readRosterCache(assignmentId) {
   try {
     const raw = localStorage.getItem(rosterCacheKey(assignmentId))
-    return raw ? JSON.parse(raw) : null
+    const data = raw ? JSON.parse(raw) : null
+    // 이메일 권한 없이 불러와 0명으로 저장된 예전 캐시는 무시한다(명단 0명 상태로 굳지 않게).
+    if (!data?.roster || Object.keys(data.roster).length === 0) return null
+    return data
   } catch {
     return null
   }
@@ -557,13 +560,21 @@ export default function AssignmentDashboard() {
     setClassroomError('')
     setLoadingRoster(true)
     try {
-      if (!isClassroomConnected()) await signInToClassroom()
+      if (!isClassroomConnected() || !hasEmailScope()) await signInToClassroom()
       const map = {}
+      let fetched = 0
       for (const c of classrooms) {
         const students = await listCourseStudents(c.courseId)
+        fetched += students.length
         for (const s of students) {
           if (s.email) map[s.email] = { courseId: c.courseId, name: s.name }
         }
+      }
+      // 학생은 왔는데 이메일이 하나도 없으면 '학생 이메일 보기' 권한이 빠진 것 — 빈 명단으로
+      // 덮어쓰지 말고 교사에게 다시 연결하도록 알린다.
+      if (fetched > 0 && Object.keys(map).length === 0) {
+        setClassroomError('학생 이메일을 볼 권한이 없어 명단을 매칭할 수 없습니다. 다시 \'명단 불러오기\'를 눌러 Google 권한 화면에서 "학생 이메일 주소 보기"를 포함한 모든 항목을 체크해주세요. 계속 안 되면 학교 Google 관리자에게 이 앱의 Classroom 권한 허용 여부를 확인해주세요.')
+        return
       }
       const loadedAt = Date.now()
       setRoster(map)

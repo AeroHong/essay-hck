@@ -5,19 +5,30 @@
 
 const CLIENT_ID = import.meta.env.VITE_GOOGLE_CLIENT_ID || ''
 const DISCOVERY_DOC = 'https://classroom.googleapis.com/$discovery/rest?version=v1'
-const SCOPES = [
+const REQUIRED_SCOPES = [
   'https://www.googleapis.com/auth/classroom.courses.readonly',
   'https://www.googleapis.com/auth/classroom.coursework.students',
   // 수업 학생 수 조회(courses.students.list, getCourseStudentCount)에 필요 — 명단 자체는
   // 안 쓰고 개수만 쓰지만, Classroom API는 로스터 조회에 이 스코프를 요구한다.
-  'https://www.googleapis.com/auth/classroom.rosters.readonly'
-].join(' ')
+  'https://www.googleapis.com/auth/classroom.rosters.readonly',
+  // 로스터 응답의 profile.emailAddress는 이 스코프가 있어야만 채워진다 — 없으면 이메일이
+  // 빈 값으로 와서 제출물(studentEmail)과 명단 매칭이 전부 실패한다.
+  'https://www.googleapis.com/auth/classroom.profile.emails'
+]
+const SCOPES = REQUIRED_SCOPES.join(' ')
 
 let accessToken = null
 let tokenExpiresAt = 0
 let tokenClient = null
 let gapiInited = false
 let refreshTimer = null
+// 받은 토큰에 필수 스코프(특히 학생 이메일)가 빠져 있었는지 — true면 다음 요청은 동의 화면을 다시 띄운다.
+let missingScopes = false
+
+/** 현재 토큰에 학생 이메일 조회 권한이 있는지 (명단 매칭 가능 여부) */
+export function hasEmailScope() {
+  return Boolean(accessToken) && !missingScopes
+}
 
 /** 환경변수(VITE_GOOGLE_CLIENT_ID)가 설정되어 있는지 여부 — UI에서 게시 버튼 활성/비활성 판단용 */
 export function hasClassroomConfig() {
@@ -113,11 +124,18 @@ export async function signInToClassroom() {
       tokenExpiresAt = Date.now() + expiresIn * 1000
       window.gapi.client.setToken({ access_token: accessToken })
       scheduleAutoRefresh(expiresIn)
+      // 동의 화면에서 일부 권한 체크를 끄고 승인할 수 있다(세분화된 동의). 이메일 권한이
+      // 빠지면 연결 자체는 되지만 명단 매칭이 조용히 실패하므로 여기서 기록해 둔다.
+      const oauth2 = window.google?.accounts?.oauth2
+      missingScopes = oauth2?.hasGrantedAllScopes
+        ? !oauth2.hasGrantedAllScopes(resp, ...REQUIRED_SCOPES)
+        : false
       resolve(accessToken)
     }
     // Firebase 로그인 계정과 Classroom 교사 계정이 다를 수 있으므로 첫 연결에서는
-    // Google 계정 선택기를 항상 표시한다.
-    client.requestAccessToken({ prompt: alreadyConnected ? '' : 'select_account consent' })
+    // Google 계정 선택기를 항상 표시한다. 권한이 빠진 토큰이면 동의 화면을 다시 띄운다.
+    const prompt = !alreadyConnected ? 'select_account consent' : (missingScopes ? 'consent' : '')
+    client.requestAccessToken({ prompt })
   })
 }
 
