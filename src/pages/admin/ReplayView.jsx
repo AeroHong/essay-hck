@@ -440,10 +440,11 @@ export default function ReplayView() {
                     {exportingDocx ? 'DOCX 생성 중...' : 'DOCX로 내보내기'}
                   </button>
                   <button
-                    onClick={() => window.print()}
+                    onClick={() => window.open(`/admin/assignments/${assignmentId}/print?uids=${encodeURIComponent(uid)}&autoprint=1`, '_blank', 'noopener')}
                     className="text-xs rounded-lg border border-gray-200 px-3 py-1.5 font-medium text-gray-600 hover:bg-gray-50"
+                    title="학번·이름이 찍힌 인쇄용 화면을 새 탭으로 엽니다(인쇄 창에서 PDF로 저장도 됩니다)"
                   >
-                    PDF로 내보내기
+                    🖨 인쇄 / PDF
                   </button>
                 </div>
               </div>

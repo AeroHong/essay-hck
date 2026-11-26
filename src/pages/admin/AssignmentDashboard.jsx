@@ -20,6 +20,7 @@ import { subscribeExperimentResults, formatFitValue } from '../../services/exper
 import { sectionHasAnswer } from '../../utils/sketch.js'
 import { hasClassroomConfig, signInToClassroom, listMyCourses, createCourseWork, updateCourseWorkDescription, courseWorkExists, getClassroomErrorMessage, getCourseStudentCount, listCourseStudents, isClassroomConnected, hasEmailScope } from '../../services/classroom.js'
 import AppHeader from '../../components/brand/AppHeader.jsx'
+import { readRosterCache, writeRosterCache } from '../../utils/rosterCache.js'
 
 /** handlePublishToClassroom과 반드시 같은 문구를 써야 한다 — "설명 동기화" 버튼이
  * 이미 게시된 과제를 이 문구로 덮어쓰기 때문. */
@@ -43,30 +44,6 @@ function isLateSubmission(sub, assignment) {
 const UNMATCHED_FILTER = '__unmatched__'
 // 필터 탭에서 "명단엔 있는데 제출물이 없는 학생(결석 등)"을 고르는 값.
 const ABSENT_FILTER = '__absent__'
-
-// 불러온 명단은 이 기기에만 캐시한다 — 새로고침마다 Classroom 재로그인 없이 미참여 표시를
-// 유지하려는 용도. 학생 이메일이 들어 있어 학생도 읽을 수 있는 배정 문서에는 넣지 않는다.
-function rosterCacheKey(assignmentId) {
-  return `essay-roster:${assignmentId}`
-}
-function readRosterCache(assignmentId) {
-  try {
-    const raw = localStorage.getItem(rosterCacheKey(assignmentId))
-    const data = raw ? JSON.parse(raw) : null
-    // 이메일 권한 없이 불러와 0명으로 저장된 예전 캐시는 무시한다(명단 0명 상태로 굳지 않게).
-    if (!data?.roster || Object.keys(data.roster).length === 0) return null
-    return data
-  } catch {
-    return null
-  }
-}
-function writeRosterCache(assignmentId, data) {
-  try {
-    localStorage.setItem(rosterCacheKey(assignmentId), JSON.stringify(data))
-  } catch {
-    // 저장 공간이 없거나 막혀 있으면 이번 화면에서만 쓴다.
-  }
-}
 
 function formatTime(ts) {
   if (!ts) return '—'
@@ -126,6 +103,7 @@ export default function AssignmentDashboard() {
   const [groupFilter, setGroupFilter] = useState('all') // 'all' | courseId | UNMATCHED_FILTER | ABSENT_FILTER
   const [highlightSubId, setHighlightSubId] = useState(null) // 이탈 알림에서 고른 학생 행 강조
   const [selectedAbsent, setSelectedAbsent] = useState([]) // 추가 응시를 열어줄 미참여 학생 이메일
+  const [selectedPrint, setSelectedPrint] = useState([]) // 골라서 인쇄할 학생 uid
   const [openingMakeup, setOpeningMakeup] = useState(false)
   const [linkTarget, setLinkTarget] = useState(null) // 제출물과 연결할 미참여 학생 {email, name, courseId}
   const [linking, setLinking] = useState(false)
@@ -190,6 +168,13 @@ export default function AssignmentDashboard() {
     if (!assignmentId || !user) return
     return subscribeTeacherMemos(assignmentId, user.uid, setMemos)
   }, [assignmentId, user])
+
+  // 인쇄 화면(PrintSubmissions.jsx)을 새 탭으로 연다 — uids가 없으면 배정 전체, 있으면 그 학생들만.
+  function openPrint(uids) {
+    const qs = new URLSearchParams({ autoprint: '1' })
+    if (uids) qs.set('uids', uids.join(','))
+    window.open(`/admin/assignments/${assignmentId}/print?${qs}`, '_blank', 'noopener')
+  }
 
   function openMemo(sub) {
     setMemoTarget(sub)
@@ -798,6 +783,31 @@ export default function AssignmentDashboard() {
           {roster && absenceMeaningful && (
             <span className={`text-xs ${filteredAbsent.length > 0 ? 'font-medium text-orange-600' : 'text-gray-400'}`}>미참여 {filteredAbsent.length}명</span>
           )}
+          {selectedPrint.length > 0 ? (
+            <>
+              <button
+                onClick={() => openPrint(selectedPrint)}
+                className="rounded-lg bg-gray-800 px-3 py-1.5 text-xs font-bold text-white transition-colors hover:bg-gray-700"
+                title="체크한 학생만, 학생마다 한 장씩 인쇄합니다(학번 순)"
+              >
+                🖨 선택한 {selectedPrint.length}명 인쇄
+              </button>
+              <button
+                onClick={() => setSelectedPrint([])}
+                className="text-xs text-gray-400 underline hover:text-gray-600"
+              >
+                선택 해제
+              </button>
+            </>
+          ) : filteredSubmissions.length > 0 && (
+            <button
+              onClick={() => openPrint(groupFilter === 'all' ? null : filteredSubmissions.map(s => s.studentUid))}
+              className="rounded-lg border border-gray-300 bg-white px-3 py-1.5 text-xs font-medium text-gray-700 transition-colors hover:bg-gray-50"
+              title="학생마다 한 장씩, 학번·이름이 찍힌 결과물을 인쇄합니다(학번 순). 일부만 인쇄하려면 표에서 학생을 체크하세요."
+            >
+              🖨 {groupFilter === 'all' ? '전체 일괄 인쇄' : `이 목록 일괄 인쇄 (${filteredSubmissions.length})`}
+            </button>
+          )}
           {isGradable && submissions.length > 0 && (
             <>
               <button
@@ -1162,7 +1172,21 @@ export default function AssignmentDashboard() {
             <table className="w-full text-sm">
               <thead>
                 <tr className="border-b border-gray-100 text-left text-xs text-gray-400">
-                  <th className="px-4 py-3 font-medium">이름 / 학급</th>
+                  <th className="px-4 py-3 font-medium">
+                    <label className="flex items-center gap-2 cursor-pointer" title="인쇄할 학생 선택 — 지금 목록 전체">
+                      <input
+                        type="checkbox"
+                        checked={filteredSubmissions.length > 0 && filteredSubmissions.every(s => selectedPrint.includes(s.studentUid))}
+                        onChange={() => setSelectedPrint(prev => (
+                          filteredSubmissions.every(s => prev.includes(s.studentUid))
+                            ? prev.filter(uid => !filteredSubmissions.some(s => s.studentUid === uid))
+                            : [...new Set([...prev, ...filteredSubmissions.map(s => s.studentUid)])]
+                        ))}
+                        className="h-4 w-4 rounded border-gray-300 text-indigo-600 focus:ring-indigo-300"
+                      />
+                      이름 / 학급
+                    </label>
+                  </th>
                   {hasMultipleClassrooms && <th className="px-4 py-3 font-medium">소속 수업</th>}
                   <th className="px-4 py-3 font-medium">상태</th>
                   <th className="px-4 py-3 font-medium">접속</th>
@@ -1196,6 +1220,18 @@ export default function AssignmentDashboard() {
                       onClick={() => navigate(`/admin/assignments/${assignmentId}/student/${sub.studentUid}`)}
                     >
                       <td className="px-4 py-3">
+                        <div className="flex items-start gap-2">
+                        <input
+                          type="checkbox"
+                          checked={selectedPrint.includes(sub.studentUid)}
+                          onClick={e => e.stopPropagation()}
+                          onChange={() => setSelectedPrint(prev => (
+                            prev.includes(sub.studentUid) ? prev.filter(uid => uid !== sub.studentUid) : [...prev, sub.studentUid]
+                          ))}
+                          title="인쇄할 학생으로 선택"
+                          className="mt-0.5 h-4 w-4 flex-shrink-0 rounded border-gray-300 text-indigo-600 focus:ring-indigo-300"
+                        />
+                        <div className="min-w-0">
                         <p className="font-medium text-gray-800">
                           {sub.studentName || rosterEntry?.name || '(이름 없음)'}
                           {memos[sub.id] && (
@@ -1223,6 +1259,8 @@ export default function AssignmentDashboard() {
                             </button>
                           </p>
                         )}
+                        </div>
+                        </div>
                       </td>
                       {hasMultipleClassrooms && (
                         <td className="px-4 py-3 text-xs text-gray-500">
@@ -1305,6 +1343,13 @@ export default function AssignmentDashboard() {
                       <td className="px-4 py-3 text-gray-400 text-xs">{sub.submittedAt ? formatTime(sub.submittedAt) : '—'}</td>
                       <td className="px-4 py-3">
                         <div className="flex items-center gap-2 whitespace-nowrap">
+                          <button
+                            onClick={(e) => { e.stopPropagation(); openPrint([sub.studentUid]) }}
+                            className="text-xs text-gray-400 hover:text-indigo-600"
+                            title="이 학생 결과물만 인쇄"
+                          >
+                            인쇄
+                          </button>
                           <button
                             onClick={(e) => { e.stopPropagation(); openMemo(sub) }}
                             className="text-xs text-gray-400 hover:text-indigo-600"

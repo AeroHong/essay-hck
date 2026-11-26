@@ -14,6 +14,7 @@ import PassageEditor from './pages/admin/PassageEditor.jsx'
 import AssignmentEditor from './pages/admin/AssignmentEditor.jsx'
 import AssignmentDashboard from './pages/admin/AssignmentDashboard.jsx'
 import ReplayView from './pages/admin/ReplayView.jsx'
+import PrintSubmissions from './pages/admin/PrintSubmissions.jsx'
 import TemplateList from './pages/admin/templates/TemplateList.jsx'
 import TemplateEditor from './pages/admin/templates/TemplateEditor.jsx'
 import QuestionSetEditor from './pages/admin/templates/QuestionSetEditor.jsx'
@@ -236,6 +237,7 @@ export default function App() {
           <Route path="/admin/assignments/new" element={<RequireTeacherOnly><AssignmentEditor /></RequireTeacherOnly>} />
           <Route path="/admin/assignments/:assignmentId/edit" element={<RequireTeacherOnly><AssignmentEditor /></RequireTeacherOnly>} />
           <Route path="/admin/assignments/:assignmentId" element={<RequireTeacherOnly><AssignmentDashboard /></RequireTeacherOnly>} />
+          <Route path="/admin/assignments/:assignmentId/print" element={<RequireTeacherOnly><PrintSubmissions /></RequireTeacherOnly>} />
           <Route path="/admin/assignments/:assignmentId/student/:uid" element={<RequireTeacherOnly><ReplayView /></RequireTeacherOnly>} />
           <Route path="/admin/templates" element={<RequireTeacherOnly><TemplateList /></RequireTeacherOnly>} />
           <Route path="/admin/templates/new" element={<RequireTeacherOnly><TemplateEditor /></RequireTeacherOnly>} />
