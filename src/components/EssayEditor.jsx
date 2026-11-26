@@ -4,6 +4,7 @@ import { sanitizeAnswerHtml } from '../utils/sanitizeHtml.js'
 import { isImageFile, uploadAnswerImage } from '../services/storage.js'
 import { createMathHtml, decodeLatex, decodeMathExpression, insertLineBreakAfterMath, mathToLatex, prepareMathForStorage, renderMathInElement } from '../utils/mathExpression.js'
 import { suppressNextLeave } from '../utils/focusGuard.js'
+import { buildGrid, tableToClipboard, cleanPastedTable } from '../utils/tableGrid.js'
 
 // mathlive(전용 수식 편집 라이브러리)는 수식 버튼을 처음 누르기 전까지 아예 안 실리도록
 // 별도 청크로 lazy load한다 — MathComposerDialog.jsx만 이 패키지를 import한다.
@@ -15,6 +16,28 @@ const TOOLS = [
   { cmd: 'underline', label: '밑줄', glyph: 'U', glyphClass: 'underline' },
   { cmd: 'insertUnorderedList', label: '글머리 기호 목록', glyph: '•' },
   { cmd: 'insertOrderedList', label: '번호 매기기 목록', glyph: '1.' }
+]
+
+// 표 서식 메뉴 — 색은 index.css의 table.et-theme-* 규칙과 맞춘다(gray는 기본값이라 클래스가 없다).
+const TABLE_THEMES = [
+  { id: 'gray', label: '회색', head: '#e2e8f0', band: '#f1f5f9' },
+  { id: 'blue', label: '파랑', head: '#dbeafe', band: '#eff6ff' },
+  { id: 'green', label: '초록', head: '#dcfce7', band: '#f0fdf4' },
+  { id: 'amber', label: '노랑', head: '#fef3c7', band: '#fffbeb' },
+  { id: 'rose', label: '분홍', head: '#ffe4e6', band: '#fff1f2' },
+  { id: 'purple', label: '보라', head: '#ede9fe', band: '#f5f3ff' }
+]
+const ALIGN_SCOPES = [
+  { id: 'cell', label: '셀' },
+  { id: 'row', label: '행' },
+  { id: 'col', label: '열' },
+  { id: 'table', label: '표 전체' }
+]
+const ALIGN_OPTIONS = [
+  { id: 'left', label: '왼쪽 정렬', bars: ['w-3.5', 'w-2.5', 'w-3'], justify: 'items-start' },
+  { id: 'center', label: '가운데 정렬', bars: ['w-3.5', 'w-2', 'w-3'], justify: 'items-center' },
+  { id: 'right', label: '오른쪽 정렬', bars: ['w-3.5', 'w-2.5', 'w-3'], justify: 'items-end' },
+  { id: 'distribute', label: '균등 정렬(글자를 칸 너비에 고르게 배분)', bars: ['w-3.5', 'w-3.5', 'w-3.5'], justify: 'items-stretch' }
 ]
 
 // 붙여넣은 텍스트 안의 URL을 자동으로 링크로 바꾼다(교사 지문 설명용 linkifyText.js와
@@ -65,27 +88,7 @@ function putCaretIn(target, atEnd = false) {
 // 둘째 행의 cells[1]은 논리적으로 셋째 열이다). buildGrid()가 실제 렌더링 격자를
 // 그대로 흉내내서 grid[row][col] = {cell, originRow, originCol}(그 칸을 차지한 실제
 // <td>와 그 <td>가 "시작"하는 논리 좌표)를 채워주면, 이후 모든 열/행 계산은 이
-// origin 좌표만 비교하면 되고 DOM 인덱스를 다시 셀 필요가 없다.
-function buildGrid(table) {
-  const colCount = table.querySelector('colgroup')?.children.length || (table.rows[0]?.cells.length || 0)
-  const rows = [...table.rows]
-  const grid = rows.map(() => new Array(colCount).fill(null))
-  rows.forEach((row, r) => {
-    let c = 0
-    ;[...row.cells].forEach(cell => {
-      while (c < colCount && grid[r][c]) c++
-      const colspan = cell.colSpan || 1
-      const rowspan = cell.rowSpan || 1
-      for (let dr = 0; dr < rowspan; dr++) {
-        for (let dc = 0; dc < colspan; dc++) {
-          if (grid[r + dr]) grid[r + dr][c + dc] = { cell, originRow: r, originCol: c }
-        }
-      }
-      c += colspan
-    })
-  })
-  return { grid, colCount, rowCount: rows.length }
-}
+// origin 좌표만 비교하면 되고 DOM 인덱스를 다시 셀 필요가 없다(buildGrid는 utils/tableGrid.js).
 
 /** 격자에서 이 <td>가 시작하는 논리 좌표를 찾는다(어느 칸에서 찾든 값은 같다). */
 function findCellOrigin(grid, cellEl) {
@@ -214,6 +217,18 @@ export default function EssayEditor({
   const [activeTable, setActiveTable] = useState(null) // { el, rect }
   // 여러 셀을 드래그로 선택한 상태(병합용) — 좌표는 모두 buildGrid() 기준 논리 좌표.
   const [cellSelection, setCellSelection] = useState(null) // { table, r1, c1, r2, c2 }
+  // 표 서식 패널(정렬·디자인) 열림 여부와 정렬을 적용할 범위
+  const [tableFormatOpen, setTableFormatOpen] = useState(false)
+  const [tableAlignScope, setTableAlignScope] = useState('cell')
+  // 행/열 손잡이로 고른 범위에 띄우는 메뉴 { type:'row'|'col', table, from, to }
+  const [gripMenu, setGripMenu] = useState(null)
+  // 손잡이를 누르는 동안 — 브라우저에 따라 손잡이(편집기 밖 div)를 누르면 편집기가 blur되는데, 그때 표 툴바·선택을
+  // 지워 버리면 손잡이가 사라진다(서식 패널 때와 같은 증상). 누르는 동안의 blur는 무시하고 끝나면 포커스를 돌려준다.
+  const gripPressRef = useRef(false)
+  // 복사·복제 결과 등 짧은 안내(툴바 옆에 잠깐 뜬다)
+  const [tableNotice, setTableNotice] = useState('')
+  const tableNoticeTimer = useRef(null)
+  useEffect(() => () => clearTimeout(tableNoticeTimer.current), [])
 
   // value(저장용 — 수식이 평문 라벨로 접힌 HTML)와 el.innerHTML(화면용 — 수식이 KaTeX로
   // 렌더링된 상태)은 수식이 하나라도 있으면 원래 서로 다르다. "지금 value가 라이브 DOM을
@@ -283,6 +298,12 @@ export default function EssayEditor({
       return
     }
     if (e.key === 'Tab' && !disabled && handleTableTab(e)) return
+    // 칸을 드래그(또는 행/열 손잡이)로 골라 둔 상태에선 브라우저 선택이 비어 있어 Ctrl+C가 아무것도 못 담는다 — 직접 복사한다.
+    if ((e.ctrlKey || e.metaKey) && (e.key === 'c' || e.key === 'C') && cellSelection && cellSelection.table === activeTable?.el) {
+      e.preventDefault()
+      copyTable(cellSelection)
+      return
+    }
     // Chromium은 contenteditable=false 수식 바로 뒤 Enter에서 수식 wrapper를 복제한다.
     // 이 경우만 기본 줄바꿈을 막고, 수식 하나를 유지한 채 새 줄과 캐럿을 직접 만든다.
     if (e.key === 'Enter' && insertLineBreakAfterMath(editorRef.current)) {
@@ -426,6 +447,14 @@ export default function EssayEditor({
     const el = editorRef.current
     const html = e.clipboardData?.getData('text/html') || ''
     const pasted = e.clipboardData?.getData('text/plain') || ''
+
+    // 이 앱에서 '복사'한 표(utils/tableGrid.js tableToClipboard)면 표 모양·디자인 그대로 넣는다.
+    const copiedTable = cleanPastedTable(html)
+    if (copiedTable) {
+      e.preventDefault()
+      pasteTable(copiedTable, pasted)
+      return
+    }
     const sel = window.getSelection()
     const selectedLen = sel && !sel.isCollapsed ? sel.toString().length : 0
     const beforeLen = htmlToPlainText(el?.innerHTML).length
@@ -569,9 +598,11 @@ export default function EssayEditor({
     if (table && editorRef.current?.contains(table)) {
       setActiveTable(prev => (prev?.el === table ? prev : { el: table, rect: table.getBoundingClientRect() }))
       setCellSelection(prev => (prev?.table === table ? prev : null))
+      setGripMenu(prev => (prev?.table === table ? prev : null))
     } else {
       setActiveTable(null)
       setCellSelection(null)
+      setGripMenu(null)
     }
   }
 
@@ -583,6 +614,8 @@ export default function EssayEditor({
     const colWidth = totalWidth / 3
     const table = document.createElement('table')
     table.style.width = `${Math.round(totalWidth)}px`
+    // 새 표는 머리 행 배경 + 본문 짝수 행 줄무늬가 기본으로 켜진다(서식 메뉴에서 끌 수 있다).
+    table.className = 'et-table et-hrow et-band-even'
     const colgroup = document.createElement('colgroup')
     for (let c = 0; c < 3; c++) colgroup.appendChild(makeCol(colWidth))
     table.appendChild(colgroup)
@@ -612,20 +645,22 @@ export default function EssayEditor({
     commit('insertTable')
   }
 
-  /** 병합된 셀이 있어도 안전하도록, 삽입 지점을 지나는 rowspan은 셀을 새로 만드는 대신
-   * 그 rowspan을 한 칸 늘려서 흡수한다(그래야 표가 어긋나지 않는다). */
-  function addTableRow() {
-    const table = activeTable?.el
-    if (!table) return
+  /** k번째 행(논리 좌표) 바로 아래에 새 행을 넣는다(k = -1이면 맨 위). 병합된 셀이 있어도 안전하도록,
+   * 삽입 지점을 지나는 rowspan은 셀을 새로 만드는 대신 그 rowspan을 한 칸 늘려서 흡수한다
+   * (그래야 표가 어긋나지 않는다). 새 행을 돌려준다. */
+  function insertRowAfter(table, k) {
     const { grid, colCount } = buildGrid(table)
-    const coords = getActiveCell(table)
-    const insertAfter = coords ? coords.rowIndex : grid.length - 1
     const newRow = document.createElement('tr')
+    if (k < 0) {
+      for (let i = 0; i < colCount; i++) newRow.appendChild(makeCell())
+      table.rows[0].before(newRow)
+      return newRow
+    }
     let c = 0
     while (c < colCount) {
-      const occ = grid[insertAfter][c]
-      const spanEnd = occ ? occ.originRow + (occ.cell.rowSpan || 1) - 1 : insertAfter
-      if (occ && spanEnd > insertAfter) {
+      const occ = grid[k][c]
+      const spanEnd = occ ? occ.originRow + (occ.cell.rowSpan || 1) - 1 : k
+      if (occ && spanEnd > k) {
         occ.cell.rowSpan = (occ.cell.rowSpan || 1) + 1
         c = occ.originCol + (occ.cell.colSpan || 1)
       } else {
@@ -633,93 +668,257 @@ export default function EssayEditor({
         c += 1
       }
     }
-    table.rows[insertAfter].after(newRow)
-    putCaretIn(newRow.cells[0] || newRow)
-    setCellSelection(null)
-    setActiveTable({ el: table, rect: table.getBoundingClientRect() })
-    commit('insertTableRow')
+    table.rows[k].after(newRow)
+    return newRow
   }
 
-  /** 이 행에서 "시작해서" 아래로 더 뻗어나가는 병합 셀이 있으면 먼저 분할해야 지울 수 있다
-   * (그 셀이 사라지면 내용과 병합 범위를 어디로 보내야 할지 애매해지기 때문) — 단순히
-   * 지나가기만 하는(다른 행에서 시작한) 병합은 rowspan만 줄이고 그대로 삭제 가능하다. */
-  function removeTableRow() {
-    const table = activeTable?.el
-    if (!table || table.rows.length <= 1) return
-    const { grid, colCount } = buildGrid(table)
-    const coords = getActiveCell(table)
-    const rowIndex = coords ? coords.rowIndex : grid.length - 1
-    const blocked = grid[rowIndex]?.some(occ => occ && occ.originRow === rowIndex && (occ.cell.rowSpan || 1) > 1)
-    if (blocked) return
-    const shrunk = new Set()
-    for (let c = 0; c < colCount; c++) {
-      const occ = grid[rowIndex][c]
-      if (occ && occ.originRow < rowIndex && !shrunk.has(occ.cell)) {
-        shrunk.add(occ.cell)
-        occ.cell.rowSpan = (occ.cell.rowSpan || 1) - 1
+  /** k번째 열 바로 오른쪽에 새 열을 넣는다(k = -1이면 맨 왼쪽). 가로지르는 병합은 colSpan을 늘려 흡수한다. */
+  function insertColumnAfter(table, k) {
+    const { grid, rowCount } = buildGrid(table)
+    const colgroup = table.querySelector('colgroup')
+    if (k < 0) {
+      // 위 행의 rowspan이 첫 칸을 덮는 행도 '맨 앞'에 넣으면 비어 있는 첫 칸을 차지하므로 그대로 맞는다.
+      ;[...table.rows].forEach(row => row.insertBefore(makeCell(), row.firstChild))
+      const first = colgroup?.children[0] || null
+      colgroup?.insertBefore(makeCol(first ? parseFloat(first.style.width) || 100 : 100), first)
+    } else {
+      const processed = new Set()
+      for (let r = 0; r < rowCount; r++) {
+        const occ = grid[r][k]
+        if (!occ || processed.has(occ.cell)) continue
+        processed.add(occ.cell)
+        const spanEnd = occ.originCol + (occ.cell.colSpan || 1) - 1
+        if (spanEnd > k) occ.cell.colSpan = (occ.cell.colSpan || 1) + 1
+        else occ.cell.after(makeCell())
+      }
+      const refCol = colgroup?.children[k]
+      const newCol = makeCol(refCol ? parseFloat(refCol.style.width) || 100 : 100)
+      if (refCol) refCol.after(newCol)
+      else colgroup?.appendChild(newCol)
+    }
+    syncTableWidth(table)
+  }
+
+  /** from~to 행을 지운다. 이 범위에서 "시작해서" 범위 밖까지 뻗어나가는 병합 셀이 있으면 먼저 분할해야 한다
+   * (그 셀이 사라지면 내용과 병합 범위를 어디로 보내야 할지 애매해지기 때문) — 위에서 내려와 지나가기만 하는
+   * 병합은 rowspan만 줄인다. 지울 수 없으면 false. 전부 고르면 표를 통째로 지운다('deleted'). */
+  function deleteRows(table, from, to) {
+    const { grid, rowCount, colCount } = buildGrid(table)
+    if (from <= 0 && to >= rowCount - 1) { deleteTable(); return 'deleted' }
+    for (let r = from; r <= to; r++) {
+      for (let c = 0; c < colCount; c++) {
+        const occ = grid[r][c]
+        if (occ && occ.originRow >= from && occ.originRow + (occ.cell.rowSpan || 1) - 1 > to) return false
       }
     }
-    const focusRow = table.rows[rowIndex + 1] || table.rows[rowIndex - 1]
-    table.rows[rowIndex].remove()
+    const shrunk = new Set()
+    for (let r = from; r <= to; r++) {
+      for (let c = 0; c < colCount; c++) {
+        const occ = grid[r][c]
+        if (!occ || occ.originRow >= from || shrunk.has(occ.cell)) continue
+        shrunk.add(occ.cell)
+        const end = occ.originRow + (occ.cell.rowSpan || 1) - 1
+        occ.cell.rowSpan = (occ.cell.rowSpan || 1) - (Math.min(end, to) - from + 1)
+      }
+    }
+    const focusRow = table.rows[to + 1] || table.rows[from - 1]
+    for (let r = to; r >= from; r--) table.rows[r].remove()
     if (focusRow) putCaretIn(focusRow.cells[0] || focusRow)
-    setCellSelection(null)
-    setActiveTable({ el: table, rect: table.getBoundingClientRect() })
-    commit('deleteTableRow')
+    return true
   }
 
-  /** addTableRow와 같은 이유로, colIndex를 가로지르는 병합은 colSpan을 늘려 흡수한다. */
-  function addTableColumn() {
-    const table = activeTable?.el
-    if (!table) return
+  /** deleteRows와 같은 규칙으로 from~to 열을 지운다. */
+  function deleteColumns(table, from, to) {
     const { grid, rowCount, colCount } = buildGrid(table)
-    const coords = getActiveCell(table)
-    const insertIndex = coords ? coords.colIndex : colCount - 1
+    if (from <= 0 && to >= colCount - 1) { deleteTable(); return 'deleted' }
+    for (let r = 0; r < rowCount; r++) {
+      for (let c = from; c <= to; c++) {
+        const occ = grid[r][c]
+        if (occ && occ.originCol >= from && occ.originCol + (occ.cell.colSpan || 1) - 1 > to) return false
+      }
+    }
     const processed = new Set()
     for (let r = 0; r < rowCount; r++) {
-      const occ = grid[r][insertIndex]
-      if (!occ || processed.has(occ.cell)) continue
-      processed.add(occ.cell)
-      const spanEnd = occ.originCol + (occ.cell.colSpan || 1) - 1
-      if (spanEnd > insertIndex) occ.cell.colSpan = (occ.cell.colSpan || 1) + 1
-      else occ.cell.after(makeCell())
+      for (let c = from; c <= to; c++) {
+        const occ = grid[r][c]
+        if (!occ || processed.has(occ.cell)) continue
+        processed.add(occ.cell)
+        if (occ.originCol < from) {
+          const end = occ.originCol + (occ.cell.colSpan || 1) - 1
+          occ.cell.colSpan = (occ.cell.colSpan || 1) - (Math.min(end, to) - from + 1)
+        } else {
+          occ.cell.remove()
+        }
+      }
     }
     const colgroup = table.querySelector('colgroup')
-    const refCol = colgroup?.children[insertIndex]
-    const newCol = makeCol(refCol ? parseFloat(refCol.style.width) || 100 : 100)
-    if (refCol) refCol.after(newCol)
-    else colgroup?.appendChild(newCol)
+    for (let c = to; c >= from; c--) colgroup?.children[c]?.remove()
     syncTableWidth(table)
-    setCellSelection(null)
-    setActiveTable({ el: table, rect: table.getBoundingClientRect() })
-    commit('insertTableColumn')
+    const firstCell = table.rows[0]?.cells[0]
+    if (firstCell) putCaretIn(firstCell)
+    return true
   }
 
-  /** removeTableRow와 같은 규칙: 이 열에서 시작해 더 뻗어나가는 병합 셀은 먼저 분할해야 한다. */
-  function removeTableColumn() {
+  /** 행/열 손잡이 메뉴의 동작 — 손잡이로 고른 범위(gripMenu.from~to)를 기준으로 한다. */
+  function runGripAction(action) {
+    const menu = gripMenu
+    const table = menu?.table
+    if (!table?.isConnected) { setGripMenu(null); return }
+    let inputType = null
+    if (menu.type === 'row') {
+      if (action === 'before') { putCaretIn(insertRowAfter(table, menu.from - 1).cells[0]); inputType = 'insertTableRow' }
+      else if (action === 'after') { putCaretIn(insertRowAfter(table, menu.to).cells[0]); inputType = 'insertTableRow' }
+      else if (action === 'delete') {
+        const result = deleteRows(table, menu.from, menu.to)
+        if (!result) { showTableNotice('병합된 셀이 걸쳐 있어요 — 먼저 분할해 주세요'); return }
+        if (result !== 'deleted') inputType = 'deleteTableRow'
+      }
+    } else {
+      if (action === 'before') { insertColumnAfter(table, menu.from - 1); inputType = 'insertTableColumn' }
+      else if (action === 'after') { insertColumnAfter(table, menu.to); inputType = 'insertTableColumn' }
+      else if (action === 'delete') {
+        const result = deleteColumns(table, menu.from, menu.to)
+        if (!result) { showTableNotice('병합된 셀이 걸쳐 있어요 — 먼저 분할해 주세요'); return }
+        if (result !== 'deleted') inputType = 'deleteTableColumn'
+      }
+    }
+    setGripMenu(null)
+    setCellSelection(null)
+    if (table.isConnected) setActiveTable({ el: table, rect: table.getBoundingClientRect() })
+    if (inputType) commit(inputType)
+  }
+
+  /** 열 위·행 왼쪽 손잡이를 누르면 그 행/열 전체를 고르고, 다른 손잡이 위로 끌면 범위를 넓힌다. 손을 떼면 메뉴가 뜬다. */
+  function startGripSelect(e, type, index) {
+    e.preventDefault()
+    e.stopPropagation()
     const table = activeTable?.el
     if (!table) return
-    const { grid, rowCount, colCount } = buildGrid(table)
-    if (colCount <= 1) return
-    const coords = getActiveCell(table)
-    const colIndex = coords ? coords.colIndex : colCount - 1
-    const blocked = grid.some(row => {
-      const occ = row?.[colIndex]
-      return occ && occ.originCol === colIndex && (occ.cell.colSpan || 1) > 1
-    })
-    if (blocked) return
-    const processed = new Set()
-    for (let r = 0; r < rowCount; r++) {
-      const occ = grid[r][colIndex]
-      if (!occ || processed.has(occ.cell)) continue
-      processed.add(occ.cell)
-      if (occ.originCol < colIndex) occ.cell.colSpan = (occ.cell.colSpan || 1) - 1
-      else occ.cell.remove()
+    gripPressRef.current = true
+    const { rowCount, colCount } = buildGrid(table)
+    let cur = index
+    const apply = () => {
+      const lo = Math.min(index, cur)
+      const hi = Math.max(index, cur)
+      setCellSelection(type === 'row'
+        ? { table, r1: lo, c1: 0, r2: hi, c2: colCount - 1 }
+        : { table, r1: 0, c1: lo, r2: rowCount - 1, c2: hi })
     }
-    table.querySelector('colgroup')?.children[colIndex]?.remove()
-    syncTableWidth(table)
+    setGripMenu(null)
+    apply()
+    trackPointerDrag(ev => {
+      const grip = document.elementFromPoint(ev.clientX, ev.clientY)?.closest?.('[data-tbl-grip]')
+      if (grip && grip.dataset.tblGrip === type) {
+        const next = Number(grip.dataset.index)
+        if (next !== cur) { cur = next; apply() }
+      }
+    }, () => {
+      setGripMenu({ type, table, from: Math.min(index, cur), to: Math.max(index, cur) })
+      const editor = editorRef.current
+      if (editor && document.activeElement !== editor) editor.focus({ preventScroll: true })
+      gripPressRef.current = false
+    })
+  }
+
+  // ── 표 복사·복제 ─────────────────────────────────────────────────────
+  // 복사는 text/html(엑셀·구글 시트가 색·정렬·병합까지 읽는 표) + text/plain(탭 구분)을 함께 넣는다.
+  // execCommand('copy')가 띄우는 copy 이벤트에서 직접 채워야 사파리(아이패드)에서도 버튼 한 번으로 된다.
+  function showTableNotice(text) {
+    setTableNotice(text)
+    clearTimeout(tableNoticeTimer.current)
+    tableNoticeTimer.current = setTimeout(() => setTableNotice(''), 2600)
+  }
+
+  function writeClipboard({ html, text }) {
+    let handled = false
+    const onCopy = ev => {
+      ev.clipboardData.setData('text/html', html)
+      ev.clipboardData.setData('text/plain', text)
+      ev.preventDefault()
+      handled = true
+    }
+    document.addEventListener('copy', onCopy)
+    try { document.execCommand('copy') } catch { /* 아래 비동기 API로 다시 시도 */ } finally { document.removeEventListener('copy', onCopy) }
+    if (handled) return Promise.resolve(true)
+    if (navigator.clipboard?.write && typeof ClipboardItem !== 'undefined') {
+      return navigator.clipboard.write([new ClipboardItem({
+        'text/html': new Blob([html], { type: 'text/html' }),
+        'text/plain': new Blob([text], { type: 'text/plain' })
+      })]).then(() => true, () => false)
+    }
+    return Promise.resolve(false)
+  }
+
+  /** 고른 범위가 있으면 그 범위만, 없으면 표 전체를 복사한다. */
+  function copyTable(range = cellSelection?.table === activeTable?.el ? cellSelection : null) {
+    const table = activeTable?.el
+    if (!table) return
+    writeClipboard(tableToClipboard(table, range)).then(ok => {
+      showTableNotice(ok
+        ? `${range ? '고른 칸을' : '표를'} 복사했어요 — 엑셀·구글 시트나 다른 답안 칸에 붙여넣을 수 있어요`
+        : '복사하지 못했어요 — 브라우저가 클립보드를 막고 있어요')
+    })
+  }
+
+  /** 표를 바로 아래에 하나 더 만든다(사이에 빈 줄을 두어 두 표 사이에도 글을 쓸 수 있게). */
+  function duplicateTable() {
+    const table = activeTable?.el
+    if (!table) return
+    const clone = table.cloneNode(true)
+    const gap = document.createElement('p')
+    gap.appendChild(document.createElement('br'))
+    table.after(gap)
+    gap.after(clone)
+    if (!clone.nextElementSibling) {
+      const trailing = document.createElement('p')
+      trailing.appendChild(document.createElement('br'))
+      clone.after(trailing)
+    }
+    putCaretIn(clone.rows[0]?.cells[0] || clone)
     setCellSelection(null)
+    setGripMenu(null)
+    setActiveTable({ el: clone, rect: clone.getBoundingClientRect() })
+    commit('duplicateTable')
+    showTableNotice('표를 복제했어요')
+  }
+
+  /** 앱에서 복사한 표를 붙여넣으면 표 그대로 넣는다 — 캐럿이 표 안이면(표 안에 표가 생기지 않게) 그 표 아래에. */
+  function pasteTable(table, plainText) {
+    const el = editorRef.current
+    if (!el) return
+    onLogPaste?.({
+      text: plainText,
+      charCount: plainText.length,
+      cursorPos: getCaretOffset(el),
+      resultingLength: htmlToPlainText(el.innerHTML).length + plainText.length
+    })
+    const trailing = document.createElement('p')
+    trailing.appendChild(document.createElement('br'))
+    const sel = window.getSelection()
+    const range = sel?.rangeCount ? sel.getRangeAt(0) : null
+    const host = range && el.contains(range.startContainer)
+      ? (range.startContainer.nodeType === Node.TEXT_NODE ? range.startContainer.parentElement : range.startContainer)
+      : null
+    const hostTable = host?.closest?.('table')
+    if (hostTable && el.contains(hostTable)) {
+      hostTable.after(trailing)
+      trailing.before(table)
+      table.before(document.createElement('p'))
+      table.previousSibling.appendChild(document.createElement('br'))
+    } else if (range && host) {
+      range.deleteContents()
+      const frag = document.createDocumentFragment()
+      frag.appendChild(table)
+      frag.appendChild(trailing)
+      range.insertNode(frag)
+    } else {
+      el.appendChild(table)
+      el.appendChild(trailing)
+    }
+    renderMathInElement(table)
+    putCaretIn(table.rows[0]?.cells[0] || trailing)
     setActiveTable({ el: table, rect: table.getBoundingClientRect() })
-    commit('deleteTableColumn')
+    commit('insertFromPaste')
   }
 
   /** 드래그로 선택한 사각 범위를 하나로 합친다 — 왼쪽 위 셀을 기준으로 나머지 내용을
@@ -786,6 +985,80 @@ export default function EssayEditor({
     setCellSelection(null)
     setActiveTable({ el: table, rect: table.getBoundingClientRect() })
     commit('splitTableCell')
+  }
+
+  // ── 표 서식: 글자 정렬(셀/행/열/표) + 디자인(머리 행·열, 줄무늬, 색 테마) ──────────
+  // 정렬은 각 <td style="text-align">에, 디자인은 <table class="et-…">에 둔다(색은 index.css가
+  // 그린다 — 그래서 행을 늘리거나 지워도 머리 행·홀짝 줄무늬가 저절로 다시 맞는다).
+
+  /** 정렬 대상 셀들 — 드래그로 고른 범위가 있으면 그 범위, 없으면 캐럿이 있는 셀이 기준이다. */
+  function getAlignTargets(scope) {
+    const table = activeTable?.el
+    if (!table) return []
+    const { grid, rowCount, colCount } = buildGrid(table)
+    let range = null
+    if (cellSelection?.table === table) range = cellSelection
+    else {
+      const coords = getActiveCell(table)
+      if (coords) range = { r1: coords.rowIndex, c1: coords.colIndex, r2: coords.rowIndex, c2: coords.colIndex }
+    }
+    if (!range && scope !== 'table') return []
+    let r1 = 0, r2 = rowCount - 1, c1 = 0, c2 = colCount - 1
+    if (scope === 'cell') ({ r1, r2, c1, c2 } = range)
+    else if (scope === 'row') { r1 = range.r1; r2 = range.r2 }
+    else if (scope === 'col') { c1 = range.c1; c2 = range.c2 }
+    const cells = new Set()
+    for (let r = r1; r <= r2; r++) {
+      for (let c = c1; c <= c2; c++) {
+        const occ = grid[r]?.[c]
+        if (occ?.cell) cells.add(occ.cell)
+      }
+    }
+    return [...cells]
+  }
+
+  function applyTableAlign(align, scope = tableAlignScope) {
+    const table = activeTable?.el
+    const cells = getAlignTargets(scope)
+    if (!table || !cells.length) return
+    cells.forEach(cell => {
+      cell.style.textAlignLast = align === 'distribute' ? 'justify' : ''
+      cell.style.textAlign = align === 'left' ? '' : align === 'distribute' ? 'justify' : align
+      if (!cell.getAttribute('style')) cell.removeAttribute('style')
+    })
+    setActiveTable({ el: table, rect: table.getBoundingClientRect() })
+    commit('formatTableAlign')
+  }
+
+  /** 캐럿이 있는 셀(또는 고른 범위의 왼쪽 위 셀)의 현재 정렬 — 툴바에서 지금 값을 표시하는 데 쓴다. */
+  function currentCellAlign() {
+    const table = activeTable?.el
+    if (!table) return null
+    const cell = cellSelection?.table === table
+      ? buildGrid(table).grid[cellSelection.r1]?.[cellSelection.c1]?.cell
+      : getActiveCell(table)?.cell
+    if (!cell) return null
+    if (cell.style.textAlignLast === 'justify') return 'distribute'
+    return cell.style.textAlign || 'left'
+  }
+
+  /** 같은 묶음(prefix)의 디자인 클래스를 하나로 바꾼다 — value가 없으면 그 묶음을 끈다. */
+  function setTableDesign(group, value) {
+    const table = activeTable?.el
+    if (!table) return
+    const groups = {
+      theme: TABLE_THEMES.map(t => `et-theme-${t.id}`),
+      band: ['et-band-odd', 'et-band-even'],
+      hrow: ['et-hrow'],
+      hcol: ['et-hcol']
+    }
+    table.classList.remove(...groups[group])
+    if (value) table.classList.add(value)
+    const hasDesign = [...table.classList].some(c => c.startsWith('et-') && c !== 'et-table')
+    table.classList.toggle('et-table', hasDesign)
+    if (!table.className) table.removeAttribute('class')
+    setActiveTable({ el: table, rect: table.getBoundingClientRect() })
+    commit('formatTableDesign')
   }
 
   function deleteTable() {
@@ -971,6 +1244,7 @@ export default function EssayEditor({
    */
   function handleEditorMouseDown(e) {
     if (disabled) return
+    setGripMenu(null)
     const cellEl = e.target.closest?.('td')
     if (!cellEl) return
     const table = cellEl.closest('table')
@@ -1213,7 +1487,10 @@ export default function EssayEditor({
           onKeyDown={handleKeyDown}
           onKeyUp={syncActiveTable}
           onClick={handleEditorClick}
-          onBlur={() => { setActiveTable(null); setCellSelection(null) }}
+          onBlur={() => {
+            if (gripPressRef.current) return
+            setActiveTable(null); setCellSelection(null); setGripMenu(null)
+          }}
           onCompositionStart={() => { isComposingRef.current = true }}
           onCompositionEnd={handleCompositionEnd}
           style={{ minHeight }}
@@ -1232,7 +1509,8 @@ export default function EssayEditor({
             style={{
               position: 'fixed',
               top: hoveredBlock.rect.top + 1,
-              left: hoveredBlock.rect.left - 26,
+              // 표가 편집 중이면 행 손잡이가 표 바로 왼쪽을 쓰므로 블록 손잡이는 한 칸 더 바깥으로
+              left: hoveredBlock.rect.left - (hoveredBlock.el === activeTable?.el && !disabled ? 42 : 26),
               zIndex: 1200
             }}
             className="w-[22px] h-[22px] rounded flex items-center justify-center cursor-grab text-gray-300 hover:bg-gray-100 hover:text-gray-500 select-none text-xs leading-none"
@@ -1255,30 +1533,233 @@ export default function EssayEditor({
           />
         )}
 
-        {/* 캐럿이 표 안에 있을 때만 뜨는 행/열 편집 툴바 — 표 왼쪽 위 바깥에 붙는다. */}
-        {activeTable && !disabled && (
+        {/* 캐럿이 표 안에 있을 때만 뜨는 표 툴바 — 표 왼쪽 위 바깥(열 손잡이 위)에 붙는다. 행·열 추가/삭제는
+            손잡이 메뉴로 옮겼다. 손잡이 메뉴가 열려 있는 동안은 같은 자리를 메뉴에 내준다. */}
+        {activeTable && !disabled && !gripMenu && (
           <div
             onMouseDown={e => e.preventDefault()}
             style={{
               position: 'fixed',
-              top: activeTable.rect.top - 32,
+              top: activeTable.rect.top - 50,
               left: activeTable.rect.left,
               zIndex: 1200
             }}
             className="flex items-center gap-0.5 rounded-lg border border-gray-200 bg-white px-1 py-1 shadow-sm text-[11px] text-gray-600"
           >
-            <button type="button" onClick={addTableRow} title="행 추가" className="px-1.5 py-0.5 rounded hover:bg-gray-100">+행</button>
-            <button type="button" onClick={removeTableRow} title="행 삭제" className="px-1.5 py-0.5 rounded hover:bg-gray-100">-행</button>
-            <span className="w-px h-3 bg-gray-200" />
-            <button type="button" onClick={addTableColumn} title="열 추가" className="px-1.5 py-0.5 rounded hover:bg-gray-100">+열</button>
-            <button type="button" onClick={removeTableColumn} title="열 삭제" className="px-1.5 py-0.5 rounded hover:bg-gray-100">-열</button>
+            <button type="button" onClick={() => copyTable()} title="표 복사(칸을 골라 두면 그 칸만) — 엑셀·구글 시트에 붙여넣기 가능" className="px-1.5 py-0.5 rounded hover:bg-gray-100">복사</button>
+            <button type="button" onClick={duplicateTable} title="이 표를 바로 아래에 하나 더 만들기" className="px-1.5 py-0.5 rounded hover:bg-gray-100">복제</button>
             {(canMerge || canSplit) && <span className="w-px h-3 bg-gray-200" />}
             {canMerge && <button type="button" onClick={mergeSelectedCells} title="선택한 셀 병합" className="px-1.5 py-0.5 rounded hover:bg-gray-100">병합</button>}
             {canSplit && <button type="button" onClick={splitTableCell} title="병합 해제" className="px-1.5 py-0.5 rounded hover:bg-gray-100">분할</button>}
             <span className="w-px h-3 bg-gray-200" />
+            <button
+              type="button"
+              onClick={() => setTableFormatOpen(o => !o)}
+              title="글자 정렬 · 머리 행 · 줄무늬 · 색"
+              className={`px-1.5 py-0.5 rounded ${tableFormatOpen ? 'bg-indigo-50 text-indigo-700' : 'hover:bg-gray-100'}`}
+            >
+              서식 {tableFormatOpen ? '▴' : '▾'}
+            </button>
+            <span className="w-px h-3 bg-gray-200" />
             <button type="button" onClick={deleteTable} title="표 삭제" className="px-1.5 py-0.5 rounded hover:bg-red-50 text-red-500">삭제</button>
           </div>
         )}
+
+        {/* 행/열 손잡이 — 열 위·행 왼쪽의 작은 막대. 누르면 그 행/열 전체 선택, 끌면 여러 개, 떼면 메뉴.
+            태블릿에서도 쓸 수 있게 늘 보이고(마우스 올림 의존 X), touch-action:none으로 끄는 동안 스크롤을 막는다. */}
+        {activeTable && !disabled && activeTableGrid && (() => {
+          const tableEl = activeTable.el
+          const rect = activeTable.rect
+          const cols = [...(tableEl.querySelector('colgroup')?.children || [])]
+          const widths = cols.map(c => parseFloat(c.style.width) || 0)
+          const sum = widths.reduce((a, b) => a + b, 0) || 1
+          const scale = rect.width / sum
+          let x = rect.left
+          const colGrips = widths.map((w, i) => { const g = { i, left: x, width: w * scale }; x += w * scale; return g })
+          const rowGrips = [...tableEl.rows].map((row, i) => { const r = row.getBoundingClientRect(); return { i, top: r.top, height: r.height } })
+          const selType = cellSelection?.table === tableEl
+            ? (cellSelection.c1 === 0 && cellSelection.c2 === activeTableGrid.colCount - 1 ? 'row'
+              : cellSelection.r1 === 0 && cellSelection.r2 === activeTableGrid.rowCount - 1 ? 'col' : null)
+            : null
+          const isSel = (type, i) => selType === type && (type === 'row'
+            ? i >= cellSelection.r1 && i <= cellSelection.r2
+            : i >= cellSelection.c1 && i <= cellSelection.c2)
+          const gripClass = on => `rounded-full transition-colors ${on ? 'bg-indigo-500' : 'bg-gray-200 hover:bg-indigo-300'}`
+          return (
+            <>
+              {colGrips.map(g => (
+                <div
+                  key={`cg-${g.i}`}
+                  data-tbl-grip="col"
+                  data-index={g.i}
+                  title="열 선택 — 눌러서 추가·삭제·정렬"
+                  onMouseDown={e => e.preventDefault()}
+                  onPointerDown={e => startGripSelect(e, 'col', g.i)}
+                  style={{ position: 'fixed', top: rect.top - 16, left: g.left + 3, width: Math.max(8, g.width - 6), height: 12, zIndex: 1210, touchAction: 'none', cursor: 'pointer', padding: '3px 0' }}
+                >
+                  <div className={`h-full ${gripClass(isSel('col', g.i))}`} />
+                </div>
+              ))}
+              {rowGrips.map(g => (
+                <div
+                  key={`rg-${g.i}`}
+                  data-tbl-grip="row"
+                  data-index={g.i}
+                  title="행 선택 — 눌러서 추가·삭제·정렬"
+                  onMouseDown={e => e.preventDefault()}
+                  onPointerDown={e => startGripSelect(e, 'row', g.i)}
+                  style={{ position: 'fixed', top: g.top + 3, left: rect.left - 16, width: 12, height: Math.max(8, g.height - 6), zIndex: 1210, touchAction: 'none', cursor: 'pointer', padding: '0 3px' }}
+                >
+                  <div className={`w-full h-full ${gripClass(isSel('row', g.i))}`} />
+                </div>
+              ))}
+            </>
+          )
+        })()}
+
+        {/* 손잡이로 고른 행/열 메뉴 — 열은 표 위 툴바 자리에, 행은 고른 행 바로 위에 뜬다. */}
+        {activeTable && !disabled && gripMenu && gripMenu.table === activeTable.el && (() => {
+          const tableEl = activeTable.el
+          const isRow = gripMenu.type === 'row'
+          const cols = [...(tableEl.querySelector('colgroup')?.children || [])]
+          const widths = cols.map(c => parseFloat(c.style.width) || 0)
+          const sum = widths.reduce((a, b) => a + b, 0) || 1
+          const colLeft = activeTable.rect.left + widths.slice(0, gripMenu.from).reduce((a, b) => a + b, 0) * (activeTable.rect.width / sum)
+          const rowTop = tableEl.rows[gripMenu.from]?.getBoundingClientRect().top ?? activeTable.rect.top
+          const count = gripMenu.to - gripMenu.from + 1
+          const unit = isRow ? '행' : '열'
+          const btn = 'px-1.5 py-0.5 rounded hover:bg-gray-100 whitespace-nowrap'
+          return (
+            <div
+              onMouseDown={e => e.preventDefault()}
+              style={{
+                position: 'fixed',
+                top: isRow ? Math.max(4, rowTop - 36) : activeTable.rect.top - 50,
+                left: Math.max(4, isRow ? activeTable.rect.left : Math.min(colLeft, window.innerWidth - 440)),
+                zIndex: 1270
+              }}
+              className="flex items-center gap-0.5 rounded-lg border border-indigo-200 bg-white px-1 py-1 shadow-md text-[11px] text-gray-600"
+            >
+              <span className="px-1 font-semibold text-indigo-700">{count > 1 ? `${unit} ${count}개` : unit}</span>
+              <span className="w-px h-3 bg-gray-200" />
+              <button type="button" onClick={() => runGripAction('before')} className={btn}>{isRow ? '↑ 위에 추가' : '← 왼쪽에 추가'}</button>
+              <button type="button" onClick={() => runGripAction('after')} className={btn}>{isRow ? '↓ 아래에 추가' : '→ 오른쪽에 추가'}</button>
+              <button type="button" onClick={() => runGripAction('delete')} className={`${btn} text-red-500 hover:bg-red-50`}>삭제</button>
+              <span className="w-px h-3 bg-gray-200" />
+              {ALIGN_OPTIONS.map(o => (
+                <button
+                  key={o.id}
+                  type="button"
+                  onClick={() => applyTableAlign(o.id, 'cell')}
+                  title={o.label}
+                  className={`w-7 h-6 flex flex-col justify-center gap-[2px] px-1.5 rounded hover:bg-gray-100 ${o.justify}`}
+                >
+                  {o.bars.map((w, i) => <span key={i} className={`block h-[2px] rounded bg-gray-600 ${w}`} />)}
+                </button>
+              ))}
+              <span className="w-px h-3 bg-gray-200" />
+              <button type="button" onClick={() => copyTable(cellSelection)} className={btn}>복사</button>
+              <button type="button" onClick={() => { setGripMenu(null); setCellSelection(null) }} title="닫기" className="px-1 py-0.5 rounded text-gray-400 hover:bg-gray-100">✕</button>
+            </div>
+          )
+        })()}
+
+        {/* 복사·복제 결과 같은 짧은 안내 */}
+        {activeTable && tableNotice && (
+          <div
+            style={{ position: 'fixed', bottom: 28, left: '50%', transform: 'translateX(-50%)', zIndex: 1280 }}
+            className="pointer-events-none rounded-lg bg-gray-900/90 px-2.5 py-1.5 text-[11px] text-white shadow"
+          >
+            {tableNotice}
+          </div>
+        )}
+
+        {/* 표 서식 패널 — 위쪽에 자리가 있으면 툴바 위에, 없으면 표 아래에 뜬다. 버튼만 쓰고(셀렉트 박스는
+            포커스를 가져가 편집기 blur → 툴바가 닫힌다) mousedown 기본 동작을 막아 캐럿·셀 선택을 유지한다. */}
+        {activeTable && !disabled && tableFormatOpen && (() => {
+          const tableEl = activeTable.el
+          const has = c => tableEl.classList.contains(c)
+          const theme = TABLE_THEMES.find(t => has(`et-theme-${t.id}`))?.id || 'gray'
+          const band = has('et-band-odd') ? 'et-band-odd' : has('et-band-even') ? 'et-band-even' : ''
+          const align = currentCellAlign()
+          // 패널 아래 끝을 툴바(표 위 32px) 바로 위에 붙인다 — 위쪽 기준으로 높이를 어림하면 실제 패널이 더 커서
+          // 아래로 넘쳐 행·열 툴바를 덮었다(버튼이 사라진 것처럼 보임). 위에 자리가 없으면 표 아래에 띄운다.
+          const PANEL_H = 230
+          const TOOLBAR_GAP = 54
+          const above = activeTable.rect.top - TOOLBAR_GAP - PANEL_H > 8
+          const chip = on => `px-2 py-0.5 rounded-md border text-[11px] ${on ? 'border-indigo-300 bg-indigo-50 text-indigo-700 font-semibold' : 'border-gray-200 text-gray-600 hover:bg-gray-50'}`
+          return (
+            <div
+              onMouseDown={e => e.preventDefault()}
+              style={{
+                position: 'fixed',
+                ...(above
+                  ? { bottom: window.innerHeight - (activeTable.rect.top - TOOLBAR_GAP) }
+                  : { top: activeTable.rect.bottom + 10 }),
+                left: activeTable.rect.left,
+                width: 352,
+                zIndex: 1260
+              }}
+              className="rounded-xl border border-gray-200 bg-white p-3 shadow-lg text-[11px] text-gray-600 space-y-2.5"
+            >
+              <div>
+                <p className="mb-1 font-semibold text-gray-500">글자 정렬</p>
+                <div className="flex items-center gap-1 flex-wrap">
+                  {ALIGN_SCOPES.map(s => (
+                    <button key={s.id} type="button" onClick={() => setTableAlignScope(s.id)} className={chip(tableAlignScope === s.id)}>
+                      {s.id === 'cell' && cellSelection?.table === tableEl ? '선택 셀' : s.label}
+                    </button>
+                  ))}
+                </div>
+                <div className="mt-1.5 flex items-center gap-1">
+                  {ALIGN_OPTIONS.map(o => (
+                    <button
+                      key={o.id}
+                      type="button"
+                      onClick={() => applyTableAlign(o.id)}
+                      title={o.label}
+                      className={`w-8 h-7 flex flex-col justify-center gap-[3px] px-2 rounded-md border ${o.justify} ${align === o.id ? 'border-indigo-300 bg-indigo-50' : 'border-gray-200 hover:bg-gray-50'}`}
+                    >
+                      {o.bars.map((w, i) => <span key={i} className={`block h-[2px] rounded bg-gray-600 ${w}`} />)}
+                    </button>
+                  ))}
+                  <span className="ml-1 text-gray-400">
+                    {ALIGN_SCOPES.find(s => s.id === tableAlignScope)?.label}에 적용
+                  </span>
+                </div>
+              </div>
+              <div>
+                <p className="mb-1 font-semibold text-gray-500">머리글 · 줄무늬</p>
+                <div className="flex items-center gap-1 flex-wrap">
+                  <button type="button" onClick={() => setTableDesign('hrow', has('et-hrow') ? null : 'et-hrow')} className={chip(has('et-hrow'))}>머리 행</button>
+                  <button type="button" onClick={() => setTableDesign('hcol', has('et-hcol') ? null : 'et-hcol')} className={chip(has('et-hcol'))}>머리 열</button>
+                  <span className="w-px h-3 bg-gray-200 mx-0.5" />
+                  <button type="button" onClick={() => setTableDesign('band', null)} className={chip(!band)}>줄무늬 없음</button>
+                  <button type="button" onClick={() => setTableDesign('band', 'et-band-odd')} className={chip(band === 'et-band-odd')} title="머리 행을 뺀 본문의 1·3·5… 번째 행에 배경색">홀수 행</button>
+                  <button type="button" onClick={() => setTableDesign('band', 'et-band-even')} className={chip(band === 'et-band-even')} title="머리 행을 뺀 본문의 2·4·6… 번째 행에 배경색">짝수 행</button>
+                </div>
+              </div>
+              <div>
+                <p className="mb-1 font-semibold text-gray-500">색</p>
+                <div className="flex items-center gap-1.5">
+                  {TABLE_THEMES.map(t => (
+                    <button
+                      key={t.id}
+                      type="button"
+                      onClick={() => setTableDesign('theme', t.id === 'gray' ? null : `et-theme-${t.id}`)}
+                      title={t.label}
+                      className={`w-7 h-7 rounded-md overflow-hidden border-2 flex flex-col ${theme === t.id ? 'border-indigo-500' : 'border-gray-200 hover:border-gray-300'}`}
+                    >
+                      <span className="block flex-1" style={{ background: t.head }} />
+                      <span className="block flex-1 bg-white" />
+                      <span className="block flex-1" style={{ background: t.band }} />
+                    </button>
+                  ))}
+                </div>
+              </div>
+            </div>
+          )
+        })()}
 
         {/* 드래그로 여러 셀을 선택했을 때의 반투명 하이라이트(병합 대상 표시). */}
         {selectionRect && (

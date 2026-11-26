@@ -100,3 +100,31 @@ math-field::part(ui-menu-container) {
   border-radius: 999px; background: var(--fb-pin); color: #fff;
   font-size: .62em; font-weight: 700; line-height: 1; vertical-align: super;
 }
+
+/* 답안 표 디자인(EssayEditor.jsx 표 서식 메뉴) — <table class="et-table et-theme-blue et-hrow et-band-odd">처럼
+   클래스로만 저장하고 색은 여기서 그린다. 행을 추가·삭제해도 머리 행·줄무늬가 저절로 다시 맞춰진다
+   (인디자인 표 스타일의 '머리글 행 + 교대로 칠하기'와 같은 발상). 줄무늬의 홀수/짝수는 머리 행을 뺀
+   본문 행 기준으로 센다. 학생 화면·교사 재생·인쇄가 모두 이 규칙을 같이 쓴다. */
+table.et-table { --et-head: #e2e8f0; --et-head-text: #0f172a; --et-band: #f1f5f9; }
+table.et-theme-blue { --et-head: #dbeafe; --et-head-text: #1e3a8a; --et-band: #eff6ff; }
+table.et-theme-green { --et-head: #dcfce7; --et-head-text: #14532d; --et-band: #f0fdf4; }
+table.et-theme-amber { --et-head: #fef3c7; --et-head-text: #78350f; --et-band: #fffbeb; }
+table.et-theme-rose { --et-head: #ffe4e6; --et-head-text: #881337; --et-band: #fff1f2; }
+table.et-theme-purple { --et-head: #ede9fe; --et-head-text: #4c1d95; --et-band: #f5f3ff; }
+
+table.et-band-odd:not(.et-hrow) > tbody > tr:nth-child(odd) > td,
+table.et-band-odd.et-hrow > tbody > tr:nth-child(even) > td,
+table.et-band-even:not(.et-hrow) > tbody > tr:nth-child(even) > td,
+table.et-band-even.et-hrow > tbody > tr:nth-child(odd):not(:first-child) > td {
+  background-color: var(--et-band);
+}
+table.et-hcol > tbody > tr > td:first-child,
+table.et-hrow > tbody > tr:first-child > td {
+  background-color: var(--et-head);
+  color: var(--et-head-text);
+  font-weight: 700;
+}
+table.et-table td {
+  -webkit-print-color-adjust: exact;
+  print-color-adjust: exact;
+}

@@ -77,8 +77,9 @@ const ANSWER_ALLOWED_TAGS = ['p', 'div', 'br', 'span', 'b', 'strong', 'i', 'em',
 // data-math에는 앱이 만든 base64 수식 데이터만 저장한다(원본 LaTeX 또는 레거시 템플릿
 // 구조). data-math-format="tex"가 신규(LaTeX) 형식, 없으면 레거시 형식 — 렌더러가 이를
 // 다시 읽어 KaTeX로 그리므로, KaTeX가 생성한 내부 마크업 자체를 Firestore에 저장할 필요는 없다.
-// style은 통째로 허용하지 않고 width/height만 남긴다(아래 STYLE_ATTR 처리) — 표/열/행 크기
-// 조정(EssayEditor.jsx)에 필요한 최소한만 연다.
+// style은 통째로 허용하지 않고 width/height(표/열/행 크기 조정)와 text-align(표 셀 정렬)만
+// 남긴다(아래 STYLE_ATTR 처리) — EssayEditor.jsx에 필요한 최소한만 연다. 표 머리 행·줄무늬
+// 배경은 style이 아니라 <table class="et-table et-hrow …">로 저장한다(index.css가 그린다).
 const ANSWER_ALLOWED_ATTR = ['src', 'alt', 'width', 'class', 'data-math', 'data-math-mode', 'data-math-format', 'contenteditable', 'role', 'tabindex', 'aria-label', 'href', 'target', 'rel', 'style', 'colspan', 'rowspan']
 
 /** 학생 답안 HTML을 안전한 부분집합으로 정제한다(저장 시/렌더 시 이중으로 호출해도 안전, 멱등). */
@@ -93,9 +94,14 @@ export function sanitizeAnswerHtml(html) {
   }).replace(STYLE_ATTR, (match, value) => {
     const width = /(?:^|;)\s*width\s*:\s*(\d+(?:\.\d+)?px)/i.exec(value)
     const height = /(?:^|;)\s*height\s*:\s*(\d+(?:\.\d+)?px)/i.exec(value)
+    // 표 셀 글자 정렬(EssayEditor 표 서식) — 정해진 값만 통과시킨다.
+    const align = /(?:^|;)\s*text-align\s*:\s*(left|center|right|justify)\b/i.exec(value)
+    const alignLast = /(?:^|;)\s*text-align-last\s*:\s*(justify)\b/i.exec(value)
     const parts = []
     if (width) parts.push(`width:${width[1]}`)
     if (height) parts.push(`height:${height[1]}`)
+    if (align) parts.push(`text-align:${align[1].toLowerCase()}`)
+    if (alignLast) parts.push('text-align-last:justify')
     return parts.length ? ` style="${parts.join(';')}"` : ''
   })
 }
